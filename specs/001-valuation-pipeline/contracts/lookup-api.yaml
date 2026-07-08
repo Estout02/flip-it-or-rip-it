@@ -1,0 +1,173 @@
+openapi: 3.1.0
+info:
+  title: Flip It or Rip It — Lookup API
+  version: 0.2.0
+  description: >
+    Core valuation pipeline contract. All monetary fields are integer cents
+    (constitution Principle VI). Valuations are asking-price-based (eBay Browse
+    active listings) until Marketplace Insights access is granted.
+paths:
+  /health:
+    get:
+      summary: Liveness check
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: ok }
+                  ebayCallsToday:
+                    type: integer
+                    description: eBay API calls consumed since 00:00 UTC (quota headroom visibility, SC-004)
+  /api/lookup:
+    post:
+      summary: Item lookup → FLIP/RIP verdict
+      description: >
+        Provide an identifier (UPC/ISBN/EAN) and/or a free-text title. Identifier
+        takes precedence; title is the fallback when identifier resolution finds
+        nothing. Subject to a per-client cap of 50 lookups/day.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                identifier:
+                  type: string
+                  description: UPC/ISBN/EAN from a barcode scan; hyphens/spaces tolerated.
+                  examples: ["9780345391803", "045496830434"]
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: Free-text item title; used when identifier is absent or resolves to nothing.
+                  examples: ["Chrono Trigger SNES"]
+                costBasisCents:
+                  type: integer
+                  minimum: 0
+                  default: 0
+                  description: What the user paid for the item, in cents.
+                profitThresholdCents:
+                  type: integer
+                  minimum: 0
+                  description: Per-request FLIP/RIP cutoff in cents. Defaults to server config (PROFIT_THRESHOLD_DEFAULT, $10 → 1000).
+              anyOf:
+                - required: [identifier]
+                - required: [title]
+      responses:
+        '200':
+          description: Verdict computed (including the legitimate no-market-data RIP).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerdictResult'
+        '400':
+          description: Validation failure — no identifier/title, malformed identifier, or negative money. No external calls were made.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingInput:
+                  value: { error: validation, message: "Provide a title or an identifier (UPC/ISBN/EAN)." }
+        '429':
+          description: Per-client daily lookup cap (50/day) reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                capped:
+                  value: { error: limit-reached, message: "Daily lookup limit reached. Resets at 00:00 UTC." }
+        '503':
+          description: Marketplace temporarily unreachable (cooldown, quota budget exhausted, or upstream failure) and no cached valuation exists. Distinct from a no-market-data verdict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                cooldown:
+                  value: { error: temporarily-unavailable, message: "Marketplace lookup unavailable, try again shortly." }
+components:
+  schemas:
+    VerdictResult:
+      type: object
+      required:
+        [verdict, estimatedValueCents, feesCents, shippingEstimateCents, profitCents,
+         liquidityScore, liquidityBasis, sampleSize, pricingBasis, noMarketData,
+         matchedTitle, cached, query]
+      properties:
+        verdict:
+          type: string
+          enum: [FLIP, RIP]
+        estimatedValueCents:
+          type: integer
+          description: Median of the ≤10 lowest-priced active listings, in cents.
+        feesCents:
+          type: integer
+          description: Estimated marketplace fees (flat rate, default 13.25%).
+        shippingEstimateCents:
+          type: integer
+          description: Flat MVP estimate (default 500).
+        profitCents:
+          type: integer
+          description: estimatedValue − fees − shipping − costBasis. May be negative.
+        liquidityScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Supply-side heuristic min(1, 10/activeListingCount) until sold data exists.
+        liquidityBasis:
+          type: string
+          enum: [SUPPLY_SIDE_ONLY]
+          description: Marks the liquidity signal as degraded (no sold data yet).
+        sampleSize:
+          type: integer
+          minimum: 0
+          description: Number of listings behind the estimate (≤10).
+        pricingBasis:
+          type: string
+          enum: [ASKING_PRICE]
+          description: Valuation derives from active-listing asking prices, not sold prices.
+        noMarketData:
+          type: boolean
+          description: True when no matching listings were found — verdict is RIP with zero value.
+        matchedTitle:
+          type: [string, 'null']
+          description: Title of the best-matched listing/product, for user mismatch-spotting.
+        cached:
+          type: boolean
+          description: True when served from the ~24h valuation cache (zero external calls).
+        query:
+          type: object
+          properties:
+            identifier: { type: [string, 'null'] }
+            title: { type: [string, 'null'] }
+      example:
+        verdict: FLIP
+        estimatedValueCents: 3900
+        feesCents: 517
+        shippingEstimateCents: 500
+        profitCents: 2883
+        liquidityScore: 0.83
+        liquidityBasis: SUPPLY_SIDE_ONLY
+        sampleSize: 10
+        pricingBasis: ASKING_PRICE
+        noMarketData: false
+        matchedTitle: "Chrono Trigger (Super Nintendo, 1995) — Cart Only"
+        cached: false
+        query: { identifier: null, title: "Chrono Trigger SNES" }
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          enum: [validation, limit-reached, temporarily-unavailable]
+        message:
+          type: string
