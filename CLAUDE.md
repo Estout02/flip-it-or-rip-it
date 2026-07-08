@@ -14,9 +14,16 @@ specs land in `specs/`. Founder decisions recorded in `docs/PROJECT_BRIEF.md` fe
 
 ## Current state
 
-Early scaffold. The dockerized backend API is the core; the phone frontend (likely iOS-first) comes
-later and will consume this API. The eBay integration, shipping estimation, and item identification
-are stubbed — `src/lib/verdict.ts` holds the real profit/verdict math.
+The core valuation pipeline is real (spec `specs/001-valuation-pipeline/`): identifier resolution
+(UPC/ISBN/EAN incl. ISBN-10→13), eBay Browse API valuation (sandbox, OAuth app token, median of the
+10 lowest asking prices flagged `ASKING_PRICE`), flat shipping estimate, and the verdict math in
+`src/lib/verdict.ts` — orchestrated by `src/lib/pipeline.ts` behind a 24h in-memory valuation cache,
+a 50/day per-client cap, and a global daily eBay-call budget. Tests use a fake `EbayBrowseClient`;
+the only code that touches the real sandbox is the opt-in smoke script:
+`docker compose run --rm api npx tsx scripts/sandbox-smoke.ts`. New env vars (see `.env.example`):
+`EBAY_MARKETPLACE_ID`, `EBAY_FEE_RATE`, `SHIPPING_FLAT_CENTS`, `VALUATION_CACHE_TTL_HOURS`,
+`LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`. The phone frontend (likely iOS-first) comes later and
+will consume this API.
 
 ## Stack
 

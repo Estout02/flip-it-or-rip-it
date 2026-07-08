@@ -20,7 +20,7 @@ testable increment. Tests are colocated `*.test.ts` next to source (existing con
 
 **Purpose**: Configuration surface for everything the pipeline needs
 
-- [ ] T001 Add new config vars to `.env.example` with comments and defaults per research.md: `EBAY_MARKETPLACE_ID=EBAY_US`, `EBAY_FEE_RATE=0.1325`, `SHIPPING_FLAT_CENTS=500`, `VALUATION_CACHE_TTL_HOURS=24`, `LOOKUP_DAILY_CAP=50`, `EBAY_DAILY_CALL_BUDGET=2500`
+- [X] T001 Add new config vars to `.env.example` with comments and defaults per research.md: `EBAY_MARKETPLACE_ID=EBAY_US`, `EBAY_FEE_RATE=0.1325`, `SHIPPING_FLAT_CENTS=500`, `VALUATION_CACHE_TTL_HOURS=24`, `LOOKUP_DAILY_CAP=50`, `EBAY_DAILY_CALL_BUDGET=2500`
 
 ---
 
@@ -31,14 +31,14 @@ limiter, extended verdict math, shipping step, injectable app factory
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T002 [P] Create `src/lib/ebay/types.ts`: `ListingSummary` (`title`, `priceCents`, `epid?`), `SearchResult` (`listings`, `totalActive`), and the injectable `EbayBrowseClient` interface (`search(query: { gtin?: string; title?: string }): Promise<SearchResult>`) per data-model.md
-- [ ] T003 [P] Implement generic TTL cache in `src/lib/cache.ts` (Map + expiry, lazy eviction + periodic sweep, TTL injected) with tests in `src/lib/cache.test.ts` (hit, miss, expiry via fake timers, sweep)
-- [ ] T004 [P] Implement `src/lib/rate-limit.ts`: per-client daily counter (cap injected, UTC-midnight reset), global eBay-call budget counter, and 30s cooldown state, per data-model.md RateLimitState; tests in `src/lib/rate-limit.test.ts` (cap boundary at 50/51, window reset, budget stop, cooldown expiry — fake timers)
-- [ ] T005 [P] Implement `src/lib/shipping.ts`: `estimateShipping() → { shippingEstimateCents, method: 'FLAT_DEFAULT' }` with configurable flat cents (default 500); tests in `src/lib/shipping.test.ts`
-- [ ] T006 [P] Extend `src/lib/verdict.ts` for the asking-price world: add `supplySideLiquidity(activeListingCount)` = `min(1, 10/active)` (0 when 0 active, constant configurable), generalize `ValuationInput.soldPricesCents` naming to sample prices with a `pricingBasis` passthrough, and extend `Verdict` with `liquidityBasis`, `pricingBasis`, `noMarketData` (true iff sampleSize = 0) per data-model.md; extend `src/lib/verdict.test.ts` accordingly (keep all existing cases green, add threshold-boundary case profit == threshold → FLIP per SC-005)
-- [ ] T007 Implement OAuth2 client-credentials token manager in `src/lib/ebay/auth.ts`: sandbox/production token URL from `EBAY_ENV`, Basic auth from client id/secret, in-memory token cache with proactive refresh (< 5 min remaining), single retry on 401 per research R1/R8; tests in `src/lib/ebay/auth.test.ts` with mocked `fetch` (mint, cached reuse, proactive refresh, refresh-on-401)
-- [ ] T008 Implement Browse API client in `src/lib/ebay/browse.ts` (implements `EbayBrowseClient`): `item_summary/search` with `gtin=` or `q=`, `filter=buyingOptions:{FIXED_PRICE}`, `sort=price`, `limit=50`, marketplace header; `AbortSignal.timeout(2000)`, one retry on network error only, price→cents conversion at the boundary, 429/5xx → typed `EbayUnavailableError` (feeds cooldown), 400 → empty result, per research R2/R8; tests in `src/lib/ebay/browse.test.ts` with mocked `fetch`
-- [ ] T009 Refactor `src/server.ts` into an exported `buildApp(deps)` factory (deps: browse client, cache, rate limiter, config) with listen-only-when-main behavior, keeping the current stubbed route working; this makes integration tests injectable per research R10
+- [X] T002 [P] Create `src/lib/ebay/types.ts`: `ListingSummary` (`title`, `priceCents`, `epid?`), `SearchResult` (`listings`, `totalActive`), and the injectable `EbayBrowseClient` interface (`search(query: { gtin?: string; title?: string }): Promise<SearchResult>`) per data-model.md
+- [X] T003 [P] Implement generic TTL cache in `src/lib/cache.ts` (Map + expiry, lazy eviction + periodic sweep, TTL injected) with tests in `src/lib/cache.test.ts` (hit, miss, expiry via fake timers, sweep)
+- [X] T004 [P] Implement `src/lib/rate-limit.ts`: per-client daily counter (cap injected, UTC-midnight reset), global eBay-call budget counter, and 30s cooldown state, per data-model.md RateLimitState; tests in `src/lib/rate-limit.test.ts` (cap boundary at 50/51, window reset, budget stop, cooldown expiry — fake timers)
+- [X] T005 [P] Implement `src/lib/shipping.ts`: `estimateShipping() → { shippingEstimateCents, method: 'FLAT_DEFAULT' }` with configurable flat cents (default 500); tests in `src/lib/shipping.test.ts`
+- [X] T006 [P] Extend `src/lib/verdict.ts` for the asking-price world: add `supplySideLiquidity(activeListingCount)` = `min(1, 10/active)` (0 when 0 active, constant configurable), generalize `ValuationInput.soldPricesCents` naming to sample prices with a `pricingBasis` passthrough, and extend `Verdict` with `liquidityBasis`, `pricingBasis`, `noMarketData` (true iff sampleSize = 0) per data-model.md; extend `src/lib/verdict.test.ts` accordingly (keep all existing cases green, add threshold-boundary case profit == threshold → FLIP per SC-005)
+- [X] T007 Implement OAuth2 client-credentials token manager in `src/lib/ebay/auth.ts`: sandbox/production token URL from `EBAY_ENV`, Basic auth from client id/secret, in-memory token cache with proactive refresh (< 5 min remaining), single retry on 401 per research R1/R8; tests in `src/lib/ebay/auth.test.ts` with mocked `fetch` (mint, cached reuse, proactive refresh, refresh-on-401)
+- [X] T008 Implement Browse API client in `src/lib/ebay/browse.ts` (implements `EbayBrowseClient`): `item_summary/search` with `gtin=` or `q=`, `filter=buyingOptions:{FIXED_PRICE}`, `sort=price`, `limit=50`, marketplace header; `AbortSignal.timeout(2000)`, one retry on network error only, price→cents conversion at the boundary, 429/5xx → typed `EbayUnavailableError` (feeds cooldown), 400 → empty result, per research R2/R8; tests in `src/lib/ebay/browse.test.ts` with mocked `fetch`
+- [X] T009 Refactor `src/server.ts` into an exported `buildApp(deps)` factory (deps: browse client, cache, rate limiter, config) with listen-only-when-main behavior, keeping the current stubbed route working; this makes integration tests injectable per research R10
 
 **Checkpoint**: Foundation ready — `docker compose run --rm api npm test` green, user story implementation can begin
 
@@ -56,16 +56,16 @@ malformed identifier → 400 with zero eBay calls (quickstart §3-US1).
 
 ### Tests for User Story 1 (write first, watch them fail) ⚠️
 
-- [ ] T010 [P] [US1] Unit tests for identifier handling in `src/lib/identify.test.ts`: strip hyphens/spaces, classify EAN-8/ISBN-10/UPC-A/EAN-13/GTIN-14, ISBN-10→ISBN-13 conversion with recomputed check digit, malformed inputs rejected, `cacheKey` = `gtin:<digits>`, missing identifier+title rejected (research R3)
-- [ ] T011 [P] [US1] Unit tests for valuation in `src/lib/valuation.test.ts` (fake `EbayBrowseClient`): median of the 10 lowest positive prices from ≤50 sorted listings, <10 listings → smaller sampleSize, zero-price listings skipped, zero listings → sampleSize 0 valuation (still cacheable), `matchedTitle` from top listing, `activeListingCount` from `totalActive`, `pricingBasis: 'ASKING_PRICE'` always (research R4)
-- [ ] T012 [P] [US1] Integration tests (fastify.inject + fake client) in `src/server.test.ts` covering US1 acceptance scenarios 1–4 and edge cases: full contract shape incl. flags (SC-003), FLIP over / RIP under threshold, no-listings → 200 RIP `noMarketData: true`, cache hit → `cached: true` + fake client called exactly once (SC-002), malformed identifier → 400 + zero client calls (SC-006), 51st lookup → 429 `limit-reached` (FR-012), client throwing `EbayUnavailableError` → 503 `temporarily-unavailable` and cooldown short-circuits the next miss (FR-015), budget exhausted → 503
+- [X] T010 [P] [US1] Unit tests for identifier handling in `src/lib/identify.test.ts`: strip hyphens/spaces, classify EAN-8/ISBN-10/UPC-A/EAN-13/GTIN-14, ISBN-10→ISBN-13 conversion with recomputed check digit, malformed inputs rejected, `cacheKey` = `gtin:<digits>`, missing identifier+title rejected (research R3)
+- [X] T011 [P] [US1] Unit tests for valuation in `src/lib/valuation.test.ts` (fake `EbayBrowseClient`): median of the 10 lowest positive prices from ≤50 sorted listings, <10 listings → smaller sampleSize, zero-price listings skipped, zero listings → sampleSize 0 valuation (still cacheable), `matchedTitle` from top listing, `activeListingCount` from `totalActive`, `pricingBasis: 'ASKING_PRICE'` always (research R4)
+- [X] T012 [P] [US1] Integration tests (fastify.inject + fake client) in `src/server.test.ts` covering US1 acceptance scenarios 1–4 and edge cases: full contract shape incl. flags (SC-003), FLIP over / RIP under threshold, no-listings → 200 RIP `noMarketData: true`, cache hit → `cached: true` + fake client called exactly once (SC-002), malformed identifier → 400 + zero client calls (SC-006), 51st lookup → 429 `limit-reached` (FR-012), client throwing `EbayUnavailableError` → 503 `temporarily-unavailable` and cooldown short-circuits the next miss (FR-015), budget exhausted → 503
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Implement `src/lib/identify.ts` (identifier path): normalization, classification, ISBN-10→13 conversion, `ItemQuery { kind: 'gtin', gtin, cacheKey }`, typed `ValidationError` for malformed/missing input per data-model.md
-- [ ] T014 [US1] Implement `src/lib/valuation.ts`: `ItemQuery` → `Valuation` via injected `EbayBrowseClient` — median-of-10-lowest (reusing `estimateValueCents`), `samplePricesCents`, `sampleSize`, `activeListingCount`, `matchedTitle`, `pricingBasis`, `computedAt`
-- [ ] T015 [US1] Implement `src/lib/pipeline.ts`: `lookup(request, deps) → VerdictResult` orchestrating cache check → valuation (on miss; store even when sampleSize 0) → shipping → extended verdict; sets `cached`, counts eBay budget on actual calls only; steps communicate only via the data-model types (constitution VII)
-- [ ] T016 [US1] Rewrite `POST /api/lookup` in `src/server.ts`: JSON schema validation (`identifier` string, `costBasisCents`/`profitThresholdCents` non-negative ints, cents everywhere per FR-013), per-route `onRequest` rate-limit check (429), pipeline invocation, error mapping to the contract taxonomy (400 `validation` / 429 `limit-reached` / 503 `temporarily-unavailable`), `trustProxy` for client IP; remove all stubbed data and the `stubbed` field
+- [X] T013 [US1] Implement `src/lib/identify.ts` (identifier path): normalization, classification, ISBN-10→13 conversion, `ItemQuery { kind: 'gtin', gtin, cacheKey }`, typed `ValidationError` for malformed/missing input per data-model.md
+- [X] T014 [US1] Implement `src/lib/valuation.ts`: `ItemQuery` → `Valuation` via injected `EbayBrowseClient` — median-of-10-lowest (reusing `estimateValueCents`), `samplePricesCents`, `sampleSize`, `activeListingCount`, `matchedTitle`, `pricingBasis`, `computedAt`
+- [X] T015 [US1] Implement `src/lib/pipeline.ts`: `lookup(request, deps) → VerdictResult` orchestrating cache check → valuation (on miss; store even when sampleSize 0) → shipping → extended verdict; sets `cached`, counts eBay budget on actual calls only; steps communicate only via the data-model types (constitution VII)
+- [X] T016 [US1] Rewrite `POST /api/lookup` in `src/server.ts`: JSON schema validation (`identifier` string, `costBasisCents`/`profitThresholdCents` non-negative ints, cents everywhere per FR-013), per-route `onRequest` rate-limit check (429), pipeline invocation, error mapping to the contract taxonomy (400 `validation` / 429 `limit-reached` / 503 `temporarily-unavailable`), `trustProxy` for client IP; remove all stubbed data and the `stubbed` field
 
 **Checkpoint**: MVP — barcode lookups fully functional against sandbox; all US1 tests green
 
@@ -82,13 +82,13 @@ returns the full shape; `{}` → 400; repeat with different casing/whitespace hi
 
 ### Tests for User Story 2 (write first, watch them fail) ⚠️
 
-- [ ] T017 [P] [US2] Extend `src/lib/identify.test.ts`: title-only input → `kind: 'title'` with original-casing `titleQuery` and `cacheKey` = `title:<lowercased, trimmed, whitespace-collapsed>`; title length bounds (1–200 after trim); identifier+title → gtin kind retains `titleQuery` for fallback
-- [ ] T018 [P] [US2] Extend `src/server.test.ts` for US2 acceptance scenarios 1–3 + edge cases: title lookup returns full contract shape, `{}` → 400 `validation` + zero client calls, identifier+title where gtin search returns empty → exactly one fallback `q=` search (2 calls max, research R2), normalized-title cache hit across casing variants (FR-011), vague title small-sample visible via `sampleSize`
+- [X] T017 [P] [US2] Extend `src/lib/identify.test.ts`: title-only input → `kind: 'title'` with original-casing `titleQuery` and `cacheKey` = `title:<lowercased, trimmed, whitespace-collapsed>`; title length bounds (1–200 after trim); identifier+title → gtin kind retains `titleQuery` for fallback
+- [X] T018 [P] [US2] Extend `src/server.test.ts` for US2 acceptance scenarios 1–3 + edge cases: title lookup returns full contract shape, `{}` → 400 `validation` + zero client calls, identifier+title where gtin search returns empty → exactly one fallback `q=` search (2 calls max, research R2), normalized-title cache hit across casing variants (FR-011), vague title small-sample visible via `sampleSize`
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Extend `src/lib/identify.ts` with the title path: trim/length validation, normalized cache key, original-casing query; identifier precedence with title retained as fallback (FR-003)
-- [ ] T020 [US2] Extend `src/lib/pipeline.ts` (and `src/lib/valuation.ts` if needed): gtin search with zero results + available title → single title-search fallback, result cached under the gtin cache key (the scanned code stays the lookup identity); budget counts both calls
+- [X] T019 [US2] Extend `src/lib/identify.ts` with the title path: trim/length validation, normalized cache key, original-casing query; identifier precedence with title retained as fallback (FR-003)
+- [X] T020 [US2] Extend `src/lib/pipeline.ts` (and `src/lib/valuation.ts` if needed): gtin search with zero results + available title → single title-search fallback, result cached under the gtin cache key (the scanned code stays the lookup identity); budget counts both calls
 
 **Checkpoint**: Barcode AND title lookups both work; US1 tests still green
 
@@ -105,11 +105,11 @@ FLIP (quickstart §3-US3).
 
 ### Tests for User Story 3 (write first, watch them fail) ⚠️
 
-- [ ] T021 [US3] Extend `src/server.test.ts` for US3 acceptance scenarios 1–3 + edge cases: cost basis deducted exactly (FR-007), omitted basis defaults to 0, custom threshold honored, omitted threshold uses config default (1000), negative basis/threshold → 400 + zero client calls, and two requests differing only in basis/threshold share one cached valuation (fake client called once) with different verdicts
+- [X] T021 [US3] Extend `src/server.test.ts` for US3 acceptance scenarios 1–3 + edge cases: cost basis deducted exactly (FR-007), omitted basis defaults to 0, custom threshold honored, omitted threshold uses config default (1000), negative basis/threshold → 400 + zero client calls, and two requests differing only in basis/threshold share one cached valuation (fake client called once) with different verdicts
 
 ### Implementation for User Story 3
 
-- [ ] T022 [US3] Wire personalization end-to-end: confirm/extend `src/server.ts` schema for optional `costBasisCents`/`profitThresholdCents` (≥ 0, integers) and `src/lib/pipeline.ts` passthrough so verdict math runs per-request on top of the cached valuation; config default threshold from `PROFIT_THRESHOLD_DEFAULT` converted once at startup
+- [X] T022 [US3] Wire personalization end-to-end: confirm/extend `src/server.ts` schema for optional `costBasisCents`/`profitThresholdCents` (≥ 0, integers) and `src/lib/pipeline.ts` passthrough so verdict math runs per-request on top of the cached valuation; config default threshold from `PROFIT_THRESHOLD_DEFAULT` converted once at startup
 
 **Checkpoint**: All three user stories independently functional
 
@@ -117,10 +117,10 @@ FLIP (quickstart §3-US3).
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T023 [P] Create opt-in live sandbox smoke script `scripts/sandbox-smoke.ts` (research R10, quickstart §4): mint token → real Browse search → print formatted VerdictResult; clear error if credentials missing; never imported by tests
-- [ ] T024 [P] Quota headroom observability (constitution I; SC-004; closes analyze findings C1/G1): (a) add a Developer Analytics `getRateLimits` check to `scripts/sandbox-smoke.ts` that prints remaining Browse API quota; (b) on server startup in `src/server.ts`, fire a non-blocking `getRateLimits` call that logs quota headroom and skips gracefully when credentials are absent (never on the lookup hot path); (c) expose the internal `ebayCallsToday` counter in `GET /health` so daily consumption is verifiable
-- [ ] T025 [P] Update `CLAUDE.md` Current state section: eBay integration + identifier resolution + shipping estimate are real (sandbox); note the six new env vars and the smoke-script command
-- [ ] T026 Full verification inside Docker: `docker compose run --rm api npm test` and `npm run typecheck` green; then run quickstart.md §2–3 manual scenarios incl. SC-001 (<3s uncached) and SC-002 (<500ms cached) timing spot-checks
+- [X] T023 [P] Create opt-in live sandbox smoke script `scripts/sandbox-smoke.ts` (research R10, quickstart §4): mint token → real Browse search → print formatted VerdictResult; clear error if credentials missing; never imported by tests
+- [X] T024 [P] Quota headroom observability (constitution I; SC-004; closes analyze findings C1/G1): (a) add a Developer Analytics `getRateLimits` check to `scripts/sandbox-smoke.ts` that prints remaining Browse API quota; (b) on server startup in `src/server.ts`, fire a non-blocking `getRateLimits` call that logs quota headroom and skips gracefully when credentials are absent (never on the lookup hot path); (c) expose the internal `ebayCallsToday` counter in `GET /health` so daily consumption is verifiable
+- [X] T025 [P] Update `CLAUDE.md` Current state section: eBay integration + identifier resolution + shipping estimate are real (sandbox); note the six new env vars and the smoke-script command
+- [X] T026 Full verification inside Docker: `docker compose run --rm api npm test` and `npm run typecheck` green; then run quickstart.md §2–3 manual scenarios incl. SC-001 (<3s uncached) and SC-002 (<500ms cached) timing spot-checks
 
 ---
 

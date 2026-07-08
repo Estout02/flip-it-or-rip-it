@@ -1,8 +1,16 @@
 // Core flip/rip decision math. All money values are integer cents.
 
+export type PricingBasis = 'ASKING_PRICE';
+export type LiquidityBasis = 'SUPPLY_SIDE_ONLY';
+
 export interface ValuationInput {
-  /** Recent sold prices from eBay, in cents, most recent first. */
-  soldPricesCents: number[];
+  /**
+   * Market sample prices in cents, e.g. the lowest active asking prices until
+   * Marketplace Insights sold data is granted. What they are is declared by
+   * pricingBasis, which passes through to the verdict untouched.
+   */
+  samplePricesCents: number[];
+  pricingBasis: PricingBasis;
   /** Count of currently active listings for the same item. */
   activeListingCount: number;
   /** Estimated cost to ship, in cents. */
@@ -21,17 +29,24 @@ export interface Verdict {
   feesCents: number;
   shippingEstimateCents: number;
   profitCents: number;
-  /** 0–1; sold velocity vs. active supply. Low = illiquid even if the price looks good. */
+  /** 0–1; see supplySideLiquidity — degraded signal until sold data exists. */
   liquidityScore: number;
+  liquidityBasis: LiquidityBasis;
   sampleSize: number;
+  pricingBasis: PricingBasis;
+  /** True iff the sample was empty — no evidence of a market. */
+  noMarketData: boolean;
 }
 
 const DEFAULT_FEE_RATE = 0.1325;
 
-/** Median of recent sold prices — robust against one outlier sale skewing the value. */
-export function estimateValueCents(soldPricesCents: number[]): number {
-  if (soldPricesCents.length === 0) return 0;
-  const sorted = [...soldPricesCents].sort((a, b) => a - b);
+/** Active-listing count at or below which supply reads as fully liquid. */
+export const LIQUIDITY_STRONG_SUPPLY_MAX = 10;
+
+/** Median of the sample prices — robust against one outlier skewing the value. */
+export function estimateValueCents(samplePricesCents: number[]): number {
+  if (samplePricesCents.length === 0) return 0;
+  const sorted = [...samplePricesCents].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 1
     ? sorted[mid]!
@@ -39,8 +54,21 @@ export function estimateValueCents(soldPricesCents: number[]): number {
 }
 
 /**
- * Sell-through proxy: sold sample vs. active supply. A $150 book with one sale and
- * hundreds of active listings should score near 0 and push the verdict toward RIP.
+ * Supply-side-only liquidity heuristic: min(1, 10/active), 0 when no listings.
+ * Directionally right without sold data — a $150 book with hundreds of active
+ * listings scores near 0. Replaced by liquidityScore once sold data arrives.
+ */
+export function supplySideLiquidity(
+  activeListingCount: number,
+  strongSupplyMax: number = LIQUIDITY_STRONG_SUPPLY_MAX,
+): number {
+  if (activeListingCount <= 0) return 0;
+  return Math.min(1, strongSupplyMax / activeListingCount);
+}
+
+/**
+ * Sell-through proxy: sold sample vs. active supply. The real formula, waiting
+ * on Marketplace Insights sold data — not used by computeVerdict until then.
  */
 export function liquidityScore(soldCount: number, activeListingCount: number): number {
   if (soldCount === 0) return 0;
@@ -49,13 +77,13 @@ export function liquidityScore(soldCount: number, activeListingCount: number): n
 
 export function computeVerdict(input: ValuationInput): Verdict {
   const feeRate = input.feeRate ?? DEFAULT_FEE_RATE;
-  const estimatedValueCents = estimateValueCents(input.soldPricesCents);
+  const estimatedValueCents = estimateValueCents(input.samplePricesCents);
   const feesCents = Math.round(estimatedValueCents * feeRate);
   const profitCents =
     estimatedValueCents - feesCents - input.shippingEstimateCents - input.costBasisCents;
-  const liquidity = liquidityScore(input.soldPricesCents.length, input.activeListingCount);
+  const sampleSize = input.samplePricesCents.length;
 
-  // No sold history at all means there is no evidence of a market: RIP.
+  // No market sample at all means there is no evidence of a market: RIP.
   const verdict =
     estimatedValueCents > 0 && profitCents >= input.profitThresholdCents ? 'FLIP' : 'RIP';
 
@@ -65,7 +93,10 @@ export function computeVerdict(input: ValuationInput): Verdict {
     feesCents,
     shippingEstimateCents: input.shippingEstimateCents,
     profitCents,
-    liquidityScore: liquidity,
-    sampleSize: input.soldPricesCents.length,
+    liquidityScore: supplySideLiquidity(input.activeListingCount),
+    liquidityBasis: 'SUPPLY_SIDE_ONLY',
+    sampleSize,
+    pricingBasis: input.pricingBasis,
+    noMarketData: sampleSize === 0,
   };
 }
