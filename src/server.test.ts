@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { buildApp, type AppConfig } from './server.js';
+import { buildApp, loadConfig, type AppConfig } from './server.js';
+import { LIQUIDITY_DEFAULTS } from './lib/verdict.js';
 import { TtlCache } from './lib/cache.js';
 import { RateLimiter } from './lib/rate-limit.js';
 import { EbayUnavailableError, type EbayBrowseClient, type SearchResult } from './lib/ebay/types.js';
@@ -13,7 +14,10 @@ const REQUIRED_VERDICT_FIELDS = [
   'shippingEstimateCents',
   'profitCents',
   'liquidityScore',
+  'liquidityTier',
   'liquidityBasis',
+  'reasonCode',
+  'reason',
   'sampleSize',
   'pricingBasis',
   'noMarketData',
@@ -65,6 +69,7 @@ const testConfig: AppConfig = {
   lookupDailyCap: 50,
   ebayDailyCallBudget: 2500,
   defaultProfitThresholdCents: 1000,
+  liquidity: LIQUIDITY_DEFAULTS,
   port: 0,
 };
 
@@ -417,5 +422,110 @@ describe('GET /health', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ status: 'ok', ebayCallsToday: 1 });
+  });
+});
+
+describe('loadConfig — liquidity knobs', () => {
+  it('falls back to defaults when the env vars are unset', () => {
+    expect(loadConfig({}).liquidity).toEqual(LIQUIDITY_DEFAULTS);
+  });
+
+  it('reads configured cutoffs', () => {
+    const config = loadConfig({
+      LIQUIDITY_STRONG_MAX_LISTINGS: '5',
+      LIQUIDITY_MODERATE_MAX_LISTINGS: '25',
+      LIQUIDITY_RISKY_MARGIN_MULTIPLIER: '3',
+    });
+    expect(config.liquidity).toEqual({
+      strongMaxListings: 5,
+      moderateMaxListings: 25,
+      riskyMarginMultiplier: 3,
+    });
+  });
+
+  it.each([
+    ['moderate below strong', { LIQUIDITY_STRONG_MAX_LISTINGS: '50', LIQUIDITY_MODERATE_MAX_LISTINGS: '10' }],
+    ['multiplier below 1', { LIQUIDITY_RISKY_MARGIN_MULTIPLIER: '0.5' }],
+    ['strong below 1', { LIQUIDITY_STRONG_MAX_LISTINGS: '0' }],
+    ['non-numeric', { LIQUIDITY_MODERATE_MAX_LISTINGS: 'fifty' }],
+  ])('falls back to defaults on invalid config (%s)', (_label, env) => {
+    expect(loadConfig(env).liquidity).toEqual(LIQUIDITY_DEFAULTS);
+  });
+});
+
+/** ~$40 median in a flooded market (300 active) → weak liquidity, big margin. */
+const FLOODED_VALUABLE: SearchResult = {
+  listings: [3900, 4000, 4100].map((cents) => listing(cents, 'Rare Hardcover First Edition')),
+  totalActive: 300,
+};
+
+/** ~$24 median in a flooded market → over threshold, but only just. */
+const FLOODED_THIN: SearchResult = {
+  listings: [2300, 2400, 2500].map((cents) => listing(cents, 'Common Paperback')),
+  totalActive: 300,
+};
+
+describe('POST /api/lookup — liquidity gate (US1)', () => {
+  it('returns FLIP_RISKY for a valuable item in a flooded market', async () => {
+    const { app } = makeApp({ client: new FakeBrowseClient(() => FLOODED_VALUABLE) });
+    const body = (await lookup(app, { title: 'Rare Hardcover' })).json();
+    expect(body.verdict).toBe('FLIP_RISKY');
+    expect(body.profitCents).toBeGreaterThanOrEqual(2000);
+  });
+
+  it('returns RIP for a thin-margin item in a flooded market', async () => {
+    const { app } = makeApp({ client: new FakeBrowseClient(() => FLOODED_THIN) });
+    const body = (await lookup(app, { title: 'Common Paperback' })).json();
+    expect(body.verdict).toBe('RIP');
+    expect(body.profitCents).toBeGreaterThan(1000); // profitable, yet still ripped
+  });
+
+  it('gates per request, so one cached valuation serves different thresholds', async () => {
+    // The gate depends on the caller's threshold while the cache does not, so a
+    // second caller must be able to get a different verdict for zero eBay calls.
+    const { app, client } = makeApp({ client: new FakeBrowseClient(() => FLOODED_VALUABLE) });
+    const lenient = (await lookup(app, { title: 'Rare Hardcover', profitThresholdCents: 1000 })).json();
+    const strict = (await lookup(app, { title: 'Rare Hardcover', profitThresholdCents: 2000 })).json();
+
+    expect(lenient.verdict).toBe('FLIP_RISKY');
+    expect(strict.verdict).toBe('RIP');
+    expect(strict.cached).toBe(true);
+    expect(client.calls).toHaveLength(1);
+  });
+});
+
+describe('POST /api/lookup — verdict reasons (US2)', () => {
+  it.each([
+    ['PROFITABLE', FLIP_MARKET],
+    ['WEAK_LIQUIDITY_HIGH_VALUE', FLOODED_VALUABLE],
+    ['WEAK_LIQUIDITY_THIN_MARGIN', FLOODED_THIN],
+    ['BELOW_THRESHOLD', RIP_MARKET],
+    ['NO_MARKET_DATA', { listings: [], totalActive: 0 } as SearchResult],
+  ])('carries reasonCode %s and readable text', async (expected, market) => {
+    const { app } = makeApp({ client: new FakeBrowseClient(() => market) });
+    const body = (await lookup(app, { title: 'Some Item' })).json();
+    expect(body.reasonCode).toBe(expected);
+    expect(typeof body.reason).toBe('string');
+    expect(body.reason.length).toBeGreaterThan(0);
+  });
+});
+
+describe('POST /api/lookup — liquidity honesty (US3)', () => {
+  it('exposes the tier with the supply-side-only marker', async () => {
+    const { app } = makeApp({ client: new FakeBrowseClient(() => FLOODED_VALUABLE) });
+    const body = (await lookup(app, { title: 'Rare Hardcover' })).json();
+    expect(body.liquidityTier).toBe('WEAK');
+    expect(body.liquidityBasis).toBe('SUPPLY_SIDE_ONLY');
+  });
+
+  it('labels a market with no competing listings as unproven', async () => {
+    const soleSeller: SearchResult = {
+      listings: [listing(4000, 'Sole Listing')],
+      totalActive: 0,
+    };
+    const { app } = makeApp({ client: new FakeBrowseClient(() => soleSeller) });
+    const body = (await lookup(app, { title: 'Sole Listing' })).json();
+    expect(body.liquidityTier).toBe('UNPROVEN');
+    expect(body.verdict).toBe('FLIP');
   });
 });

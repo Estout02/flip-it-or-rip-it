@@ -18,11 +18,21 @@ The core valuation pipeline is real (spec `specs/001-valuation-pipeline/`): iden
 (UPC/ISBN/EAN incl. ISBN-10→13), eBay Browse API valuation (sandbox, OAuth app token, median of the
 10 lowest asking prices flagged `ASKING_PRICE`), flat shipping estimate, and the verdict math in
 `src/lib/verdict.ts` — orchestrated by `src/lib/pipeline.ts` behind a 24h in-memory valuation cache,
-a 50/day per-client cap, and a global daily eBay-call budget. Tests use a fake `EbayBrowseClient`;
+a 50/day per-client cap, and a global daily eBay-call budget.
+
+The verdict is **liquidity-gated** (spec `specs/002-liquidity-score/`) and therefore **three-way**:
+`FLIP` / `FLIP_RISKY` / `RIP`. Every result carries a `liquidityTier` (STRONG / MODERATE / WEAK /
+UNPROVEN) derived from active-listing count, plus a `reasonCode` and plain-language `reason`. A
+weak-tier (flooded-market) item that clears the profit threshold only thinly is downgraded to RIP;
+one with a comfortable margin (≥ 2× threshold by default) becomes FLIP_RISKY — worth listing, but
+expect a slow sale. The gate is downgrade-only, adds zero eBay calls, and lives entirely in the
+verdict step. Zero competing listings reads as UNPROVEN and never gates in either direction. Tests use a fake `EbayBrowseClient`;
 the only code that touches the real sandbox is the opt-in smoke script:
 `docker compose run --rm api npx tsx scripts/sandbox-smoke.ts`. New env vars (see `.env.example`):
 `EBAY_MARKETPLACE_ID`, `EBAY_FEE_RATE`, `SHIPPING_FLAT_CENTS`, `VALUATION_CACHE_TTL_HOURS`,
-`LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`. The phone frontend (likely iOS-first) comes later and
+`LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`, plus the liquidity knobs
+`LIQUIDITY_STRONG_MAX_LISTINGS`, `LIQUIDITY_MODERATE_MAX_LISTINGS`,
+`LIQUIDITY_RISKY_MARGIN_MULTIPLIER`. The phone frontend (likely iOS-first) comes later and
 will consume this API.
 
 ## Stack

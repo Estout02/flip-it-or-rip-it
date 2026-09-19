@@ -4,6 +4,7 @@ import { TtlCache } from './lib/cache.js';
 import { RateLimiter } from './lib/rate-limit.js';
 import { lookup, type LookupRequest } from './lib/pipeline.js';
 import { ValidationError } from './lib/identify.js';
+import { LIQUIDITY_DEFAULTS, type LiquidityConfig } from './lib/verdict.js';
 import type { Valuation } from './lib/valuation.js';
 import { EbayTokenManager } from './lib/ebay/auth.js';
 import { BrowseApiClient } from './lib/ebay/browse.js';
@@ -21,7 +22,42 @@ export interface AppConfig {
   lookupDailyCap: number;
   ebayDailyCallBudget: number;
   defaultProfitThresholdCents: number;
+  liquidity: LiquidityConfig;
   port: number;
+}
+
+/**
+ * Cross-field invariants matter here: a moderate cutoff below the strong cutoff
+ * would make MODERATE unreachable, and a multiplier under 1 would put the
+ * "comfortable margin" line below the threshold the gate already cleared. A
+ * typo'd env var degrades to defaults rather than taking the API down.
+ */
+function loadLiquidityConfig(env: NodeJS.ProcessEnv): LiquidityConfig {
+  const candidate: LiquidityConfig = {
+    strongMaxListings: Number(
+      env.LIQUIDITY_STRONG_MAX_LISTINGS ?? LIQUIDITY_DEFAULTS.strongMaxListings,
+    ),
+    moderateMaxListings: Number(
+      env.LIQUIDITY_MODERATE_MAX_LISTINGS ?? LIQUIDITY_DEFAULTS.moderateMaxListings,
+    ),
+    riskyMarginMultiplier: Number(
+      env.LIQUIDITY_RISKY_MARGIN_MULTIPLIER ?? LIQUIDITY_DEFAULTS.riskyMarginMultiplier,
+    ),
+  };
+  const valid =
+    Number.isFinite(candidate.strongMaxListings) &&
+    candidate.strongMaxListings >= 1 &&
+    Number.isFinite(candidate.moderateMaxListings) &&
+    candidate.moderateMaxListings >= candidate.strongMaxListings &&
+    Number.isFinite(candidate.riskyMarginMultiplier) &&
+    candidate.riskyMarginMultiplier >= 1;
+  if (!valid) {
+    console.warn(
+      `Invalid LIQUIDITY_* configuration ${JSON.stringify(candidate)} — falling back to defaults.`,
+    );
+    return { ...LIQUIDITY_DEFAULTS };
+  }
+  return candidate;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -37,6 +73,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ebayDailyCallBudget: Number(env.EBAY_DAILY_CALL_BUDGET ?? 2500),
     // Env keeps dollars for founder convenience; converted to cents exactly once here.
     defaultProfitThresholdCents: Math.round(Number(env.PROFIT_THRESHOLD_DEFAULT ?? 10) * 100),
+    liquidity: loadLiquidityConfig(env),
     port: Number(env.PORT ?? 3000),
   };
 }
