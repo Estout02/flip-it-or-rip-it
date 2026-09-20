@@ -1,6 +1,11 @@
 // Browse API client — the only module that talks to eBay for search.
-// One item_summary/search call serves both lookup paths (gtin= or q=);
-// sort=price ascending means the first usable items are the lowest-priced.
+// One item_summary/search call serves both lookup paths (gtin= or q=).
+// GTIN searches sort by price ascending — eBay has already constrained them to
+// one product, so cheapest-first is what we want. Title searches deliberately do
+// NOT sort by price: the cheapest matches for free text are accessories, and
+// taking them would both poison the sample and elect the wrong product group
+// (spec 004 research R2). Category data rides along on each listing and is
+// interpreted by the valuation step, never here.
 
 import { EBAY_API_BASE, type EbayTokenManager } from './auth.js';
 import {
@@ -33,6 +38,8 @@ interface WireItemSummary {
   title?: unknown;
   price?: { value?: unknown };
   epid?: unknown;
+  leafCategoryIds?: unknown;
+  categories?: Array<{ categoryId?: unknown; categoryName?: unknown }>;
 }
 
 export class BrowseApiClient implements EbayBrowseClient {
@@ -53,11 +60,11 @@ export class BrowseApiClient implements EbayBrowseClient {
   async search(query: { gtin?: string; title?: string }): Promise<SearchResult> {
     const params = new URLSearchParams({
       filter: 'buyingOptions:{FIXED_PRICE}',
-      sort: 'price',
       limit: String(SEARCH_LIMIT),
     });
     if (query.gtin) {
       params.set('gtin', query.gtin);
+      params.set('sort', 'price');
     } else if (query.title) {
       params.set('q', query.title);
     } else {
@@ -93,6 +100,12 @@ export class BrowseApiClient implements EbayBrowseClient {
       title: typeof item.title === 'string' ? item.title : '',
       priceCents: toCents(item.price?.value),
       ...(item.epid != null ? { epid: String(item.epid) } : {}),
+      ...(Array.isArray(item.leafCategoryIds) && item.leafCategoryIds[0] != null
+        ? { leafCategoryId: String(item.leafCategoryIds[0]) }
+        : {}),
+      ...(item.categories?.[0]?.categoryName != null
+        ? { leafCategoryName: String(item.categories[0].categoryName) }
+        : {}),
     }));
     const totalActive =
       typeof data.total === 'number' && Number.isFinite(data.total)

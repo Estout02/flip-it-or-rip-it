@@ -1,6 +1,9 @@
 // Core flip/rip decision math. All money values are integer cents.
 
 export type PricingBasis = 'ADJUSTED_ASKING_PRICE';
+
+/** Re-declared here to avoid a verdict → valuation import cycle. */
+export type MatchConfidence = 'HIGH' | 'MEDIUM' | 'LOW';
 export type LiquidityBasis = 'SUPPLY_SIDE_ONLY';
 
 /** Banded read of competing supply, derived from active listing count alone. */
@@ -9,6 +12,7 @@ export type LiquidityTier = 'STRONG' | 'MODERATE' | 'WEAK' | 'UNPROVEN';
 /** Why the verdict came out the way it did. Exactly one is emitted per result. */
 export type VerdictReasonCode =
   | 'NO_MARKET_DATA'
+  | 'LOW_MATCH_CONFIDENCE'
   | 'BELOW_THRESHOLD'
   | 'WEAK_LIQUIDITY_THIN_MARGIN'
   | 'WEAK_LIQUIDITY_HIGH_VALUE'
@@ -45,10 +49,16 @@ export interface ValuationInput {
   liquidity?: Partial<LiquidityConfig>;
   /** Asking-price → sale-price correction; defaults to REALIZATION_RATE_DEFAULT. */
   realizationRate?: number;
+  /**
+   * How confidently the listings were tied to one product. Optional and defaulting
+   * to HIGH so the 36 existing call sites keep compiling (analysis F2); the
+   * valuation step computes it, the verdict step only reads it.
+   */
+  matchConfidence?: MatchConfidence;
 }
 
 export interface Verdict {
-  verdict: 'FLIP' | 'FLIP_RISKY' | 'RIP';
+  verdict: 'FLIP' | 'FLIP_RISKY' | 'RIP' | 'UNCERTAIN';
   /** Expected SALE value: the asking median corrected by realizationRate. */
   estimatedValueCents: number;
   /** The uncorrected median, for audit and future calibration. Not for display. */
@@ -62,6 +72,7 @@ export interface Verdict {
   liquidityScore: number;
   /** Banded read of competing supply; only WEAK can change the verdict. */
   liquidityTier: LiquidityTier;
+  matchConfidence: MatchConfidence;
   liquidityBasis: LiquidityBasis;
   /** Stable machine-readable explanation; exactly one per result. */
   reasonCode: VerdictReasonCode;
@@ -152,6 +163,7 @@ export function liquidityScore(soldCount: number, activeListingCount: number): n
 
 export const VERDICT_REASON_CODES = [
   'NO_MARKET_DATA',
+  'LOW_MATCH_CONFIDENCE',
   'BELOW_THRESHOLD',
   'WEAK_LIQUIDITY_THIN_MARGIN',
   'WEAK_LIQUIDITY_HIGH_VALUE',
@@ -170,6 +182,8 @@ export interface ReasonContext {
  */
 const REASON_TEXT: Record<VerdictReasonCode, (ctx: ReasonContext) => string> = {
   NO_MARKET_DATA: () => 'No matching listings found, so there is no evidence of resale value.',
+  LOW_MATCH_CONFIDENCE: () =>
+    'Could not tell which product these listings are for — check the matched title before trusting the figures.',
   BELOW_THRESHOLD: () => 'Projected profit lands under your threshold.',
   WEAK_LIQUIDITY_THIN_MARGIN: ({ activeListingCount }) =>
     `Only a little over your threshold, and ${activeListingCount} sellers are competing — not worth the wait.`,
@@ -199,6 +213,7 @@ export function verdictReasonText(code: VerdictReasonCode, ctx: ReasonContext): 
  */
 function decideVerdict(args: {
   sampleSize: number;
+  matchConfidence: MatchConfidence;
   estimatedValueCents: number;
   profitCents: number;
   profitThresholdCents: number;
@@ -207,6 +222,11 @@ function decideVerdict(args: {
 }): { verdict: Verdict['verdict']; reasonCode: VerdictReasonCode } {
   if (args.sampleSize === 0 || args.estimatedValueCents === 0) {
     return { verdict: 'RIP', reasonCode: 'NO_MARKET_DATA' };
+  }
+  // Ahead of the profit and liquidity branches on purpose: reasoning about an
+  // item we could not identify would dress up a guess as an answer.
+  if (args.matchConfidence === 'LOW') {
+    return { verdict: 'UNCERTAIN', reasonCode: 'LOW_MATCH_CONFIDENCE' };
   }
   if (args.profitCents < args.profitThresholdCents) {
     return { verdict: 'RIP', reasonCode: 'BELOW_THRESHOLD' };
@@ -234,8 +254,10 @@ export function computeVerdict(input: ValuationInput): Verdict {
     input.profitThresholdCents * liquidity.riskyMarginMultiplier,
   );
 
+  const matchConfidence = input.matchConfidence ?? 'HIGH';
   const { verdict, reasonCode } = decideVerdict({
     sampleSize,
+    matchConfidence,
     estimatedValueCents,
     profitCents,
     profitThresholdCents: input.profitThresholdCents,
@@ -253,6 +275,7 @@ export function computeVerdict(input: ValuationInput): Verdict {
     profitCents,
     liquidityScore: supplySideLiquidity(input.activeListingCount, liquidity.strongMaxListings),
     liquidityTier: tier,
+    matchConfidence,
     liquidityBasis: 'SUPPLY_SIDE_ONLY',
     reasonCode,
     reason: verdictReasonText(reasonCode, {

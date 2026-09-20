@@ -20,6 +20,19 @@ The core valuation pipeline is real (spec `specs/001-valuation-pipeline/`): iden
 `src/lib/verdict.ts` — orchestrated by `src/lib/pipeline.ts` behind a 24h in-memory valuation cache,
 a 50/day per-client cap, and a global daily eBay-call budget.
 
+Free-text lookups are **product-match filtered** (spec `specs/004-product-match-filtering/`).
+Searching a title returns the item mixed with things *about* it — stickers, magnets, mousepads,
+cases — and valuing the ten cheapest reliably valued the junk. Listings are now grouped by leaf
+category, only the dominant group is valued, and the estimate is drawn from that whole group rather
+than the cheapest ten. **Barcode lookups bypass filtering entirely** (eBay already constrains them
+to one product) and keep `sort=price`; title searches drop the price sort so relevance ordering
+survives. Every response carries `matchConfidence`, `matchedCategoryName`, `matchDominance` and
+`matchFiltered`. Confidence is the worse of two measures — category dominance and price dispersion
+*within* the matched group — and LOW confidence yields a fourth verdict state, **`UNCERTAIN`**,
+which means "we could not identify your item", not "it is worthless". **Variant and region
+separation is NOT solved**: a Japanese import and a US cartridge share a category, so an ambiguous
+query honestly returns UNCERTAIN rather than a confident wrong number.
+
 Valuation applies a **realization rate** (spec `specs/003-realization-rate/`): sellers list
 aspirationally, so the asking-price median is biased high and produced false FLIPs. The reported
 `estimatedValueCents` is now `round(median × VALUATION_REALIZATION_RATE)` — expected *sale* price,
@@ -40,7 +53,9 @@ the only code that touches the real sandbox is the opt-in smoke script:
 `EBAY_MARKETPLACE_ID`, `EBAY_FEE_RATE`, `SHIPPING_FLAT_CENTS`, `VALUATION_CACHE_TTL_HOURS`,
 `LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`, plus the liquidity knobs
 `LIQUIDITY_STRONG_MAX_LISTINGS`, `LIQUIDITY_MODERATE_MAX_LISTINGS`,
-`LIQUIDITY_RISKY_MARGIN_MULTIPLIER`, and `VALUATION_REALIZATION_RATE`. The phone frontend (likely iOS-first) comes later and
+`LIQUIDITY_RISKY_MARGIN_MULTIPLIER`, `VALUATION_REALIZATION_RATE`, and the match thresholds
+`MATCH_MIN_DOMINANCE_HIGH`, `MATCH_MIN_DOMINANCE_MEDIUM`, `MATCH_MAX_DISPERSION_HIGH`,
+`MATCH_MAX_DISPERSION_MEDIUM`. The phone frontend (likely iOS-first) comes later and
 will consume this API.
 
 ## Stack
