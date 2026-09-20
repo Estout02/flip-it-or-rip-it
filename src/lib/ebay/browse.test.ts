@@ -173,3 +173,47 @@ describe('BrowseApiClient', () => {
     });
   });
 });
+
+describe('BrowseApiClient — category transport and sort (spec 004)', () => {
+  function run(json: unknown) {
+    const urls: string[] = [];
+    const { fetchFn } = makeFetch(async (url) => {
+      urls.push(url);
+      return searchResponse(json);
+    });
+    return { client: makeClient(fetchFn), urls };
+  }
+
+  it('keeps sort=price for GTIN searches (they bypass filtering)', async () => {
+    const { client, urls } = run({ total: 0, itemSummaries: [] });
+    await client.search({ gtin: '9780345391803' });
+    expect(urls[0]).toContain('sort=price');
+    expect(urls[0]).toContain('gtin=9780345391803');
+  });
+
+  it('omits sort for title searches so relevance ordering survives', async () => {
+    const { client, urls } = run({ total: 0, itemSummaries: [] });
+    await client.search({ title: 'Chrono Trigger' });
+    expect(urls[0]).not.toContain('sort=');
+  });
+
+  it('transports leaf category id and name onto each listing', async () => {
+    const { client } = run({
+      total: 2,
+      itemSummaries: [
+        {
+          title: 'Chrono Trigger SNES',
+          price: { value: '60.00' },
+          leafCategoryIds: ['139973'],
+          categories: [{ categoryId: '139973', categoryName: 'Video Games' }],
+        },
+        { title: 'Fridge magnet', price: { value: '6.99' } },
+      ],
+    });
+    const result = await client.search({ title: 'Chrono Trigger' });
+    expect(result.listings[0]?.leafCategoryId).toBe('139973');
+    expect(result.listings[0]?.leafCategoryName).toBe('Video Games');
+    expect(result.listings[1]?.leafCategoryId).toBeUndefined();
+    expect(result.listings[1]?.leafCategoryName).toBeUndefined();
+  });
+});

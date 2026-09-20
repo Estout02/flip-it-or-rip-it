@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, loadConfig, type AppConfig } from './server.js';
 import { LIQUIDITY_DEFAULTS, REALIZATION_RATE_DEFAULT } from './lib/verdict.js';
+import { MATCH_DEFAULTS } from './lib/valuation.js';
 import { TtlCache } from './lib/cache.js';
 import { RateLimiter } from './lib/rate-limit.js';
 import { EbayUnavailableError, type EbayBrowseClient, type SearchResult } from './lib/ebay/types.js';
@@ -15,6 +16,10 @@ const REQUIRED_VERDICT_FIELDS = [
   'profitCents',
   'rawAskingMedianCents',
   'realizationRate',
+  'matchConfidence',
+  'matchedCategoryName',
+  'matchDominance',
+  'matchFiltered',
   'liquidityScore',
   'liquidityTier',
   'liquidityBasis',
@@ -74,6 +79,7 @@ const testConfig: AppConfig = {
   liquidity: LIQUIDITY_DEFAULTS,
   // Pinned at 1 so pre-existing expectations keep proving the profit math (research R9).
   realizationRate: 1,
+  match: MATCH_DEFAULTS,
   port: 0,
 };
 
@@ -653,5 +659,104 @@ describe('liquidity gate regression at the production rate (spec 002 × 003)', (
     expect(body.verdict).toBe(verdict);
     expect(body.reasonCode).toBe(reasonCode);
     expect(body.profitCents).toBeGreaterThanOrEqual(1000); // still profitable, still gated
+  });
+});
+
+describe('loadConfig — match thresholds', () => {
+  it('defaults when unset', () => {
+    expect(loadConfig({}).match).toEqual(MATCH_DEFAULTS);
+  });
+
+  it('reads valid custom bands', () => {
+    expect(
+      loadConfig({
+        MATCH_MIN_DOMINANCE_HIGH: '0.8',
+        MATCH_MIN_DOMINANCE_MEDIUM: '0.5',
+        MATCH_MAX_DISPERSION_HIGH: '2',
+        MATCH_MAX_DISPERSION_MEDIUM: '4',
+      }).match,
+    ).toEqual({
+      minDominanceHigh: 0.8,
+      minDominanceMedium: 0.5,
+      maxDispersionHigh: 2,
+      maxDispersionMedium: 4,
+    });
+  });
+
+  it.each([
+    ['medium dominance above high', { MATCH_MIN_DOMINANCE_MEDIUM: '0.9' }],
+    ['dominance above 1', { MATCH_MIN_DOMINANCE_HIGH: '1.5' }],
+    ['dominance at zero', { MATCH_MIN_DOMINANCE_MEDIUM: '0' }],
+    ['dispersion below 1', { MATCH_MAX_DISPERSION_HIGH: '0.5' }],
+    ['high dispersion above medium', { MATCH_MAX_DISPERSION_HIGH: '9' }],
+    ['non-numeric', { MATCH_MAX_DISPERSION_MEDIUM: 'wide' }],
+  ])('falls back to defaults on invalid config (%s)', (_label, env) => {
+    expect(loadConfig(env).match).toEqual(MATCH_DEFAULTS);
+  });
+});
+
+/** Live-shaped contamination: cheap accessories plus a dominant game group. */
+const CONTAMINATED_MARKET: SearchResult = {
+  listings: [
+    { title: 'Vinyl Bumper Sticker', priceCents: 549, leafCategoryId: '38583', leafCategoryName: 'Video Game Merchandise' },
+    { title: 'Fridge Magnet', priceCents: 895, leafCategoryId: '476', leafCategoryName: 'Refrigerator Magnets' },
+    { title: 'Mousepad', priceCents: 595, leafCategoryId: '23895', leafCategoryName: 'Mouse Pads & Wrist Rests' },
+    { title: 'Chrono Trigger SNES Authentic Cart', priceCents: 5500, leafCategoryId: '139973', leafCategoryName: 'Video Games' },
+    { title: 'Chrono Trigger SNES Cart Only', priceCents: 6000, leafCategoryId: '139973', leafCategoryName: 'Video Games' },
+    { title: 'Chrono Trigger Super Nintendo', priceCents: 6500, leafCategoryId: '139973', leafCategoryName: 'Video Games' },
+    { title: 'Chrono Trigger SNES Tested', priceCents: 7000, leafCategoryId: '139973', leafCategoryName: 'Video Games' },
+  ],
+  totalActive: 424,
+};
+
+describe('POST /api/lookup — product match filtering (US1)', () => {
+  it('values the dominant product group, not the accessories', async () => {
+    const { app } = makeApp({ client: new FakeBrowseClient(() => CONTAMINATED_MARKET) });
+    const body = (await lookup(app, { title: 'Chrono Trigger SNES' })).json();
+
+    // Median of 5500/6000/6500/7000 = 6250 at realizationRate 1 (testConfig).
+    expect(body.rawAskingMedianCents).toBe(6250);
+    expect(body.matchedTitle).toBe('Chrono Trigger SNES Authentic Cart');
+    expect(body.sampleSize).toBe(4);
+  });
+});
+
+describe('POST /api/lookup — match visibility (US2)', () => {
+  it('reports what was matched and how dominant it was', async () => {
+    const { app } = makeApp({ client: new FakeBrowseClient(() => CONTAMINATED_MARKET) });
+    const body = (await lookup(app, { title: 'Chrono Trigger SNES' })).json();
+    expect(body.matchedCategoryName).toBe('Video Games');
+    expect(body.matchDominance).toBeCloseTo(4 / 7);
+    expect(body.matchFiltered).toBe(true);
+    expect(['HIGH', 'MEDIUM', 'LOW']).toContain(body.matchConfidence);
+  });
+
+  it('reports a barcode lookup as unfiltered with no matched category', async () => {
+    const { app } = makeApp({ client: new FakeBrowseClient(() => FLIP_MARKET) });
+    const body = (await lookup(app, { identifier: '9780345391803' })).json();
+    expect(body.matchFiltered).toBe(false);
+    expect(body.matchedCategoryName).toBeNull();
+  });
+});
+
+/** One category, but Japanese imports beside US carts — the live reference case. */
+const HETEROGENEOUS_MARKET: SearchResult = {
+  listings: [600, 900, 1100, 1500, 2500, 24000, 30000, 80000].map((priceCents, i) => ({
+    title: `Chrono Trigger listing ${i}`,
+    priceCents,
+    leafCategoryId: '139973',
+    leafCategoryName: 'Video Games',
+  })),
+  totalActive: 424,
+};
+
+describe('POST /api/lookup — uncertain match (US3)', () => {
+  it('returns UNCERTAIN when listings cannot be tied to one product', async () => {
+    const { app } = makeApp({ client: new FakeBrowseClient(() => HETEROGENEOUS_MARKET) });
+    const body = (await lookup(app, { title: 'Chrono Trigger SNES' })).json();
+    expect(body.matchConfidence).toBe('LOW');
+    expect(body.verdict).toBe('UNCERTAIN');
+    expect(body.reasonCode).toBe('LOW_MATCH_CONFIDENCE');
+    expect(body.estimatedValueCents).toBeGreaterThan(0); // figures still present
   });
 });

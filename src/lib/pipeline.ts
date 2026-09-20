@@ -4,7 +4,7 @@
 // hooks (auto-listing, drafts) attach here after computeVerdict.
 
 import { identify } from './identify.js';
-import { computeValuation, type Valuation } from './valuation.js';
+import { computeValuation, type MatchConfig, type Valuation } from './valuation.js';
 import { estimateShipping } from './shipping.js';
 import { computeVerdict, type LiquidityConfig, type Verdict } from './verdict.js';
 import type { TtlCache } from './cache.js';
@@ -20,6 +20,9 @@ export interface LookupRequest {
 
 export interface VerdictResult extends Verdict {
   matchedTitle: string | null;
+  matchedCategoryName: string | null;
+  matchDominance: number;
+  matchFiltered: boolean;
   /** True when served from the cached valuation (zero external calls). */
   cached: boolean;
   query: { identifier: string | null; title: string | null };
@@ -35,6 +38,7 @@ export interface PipelineDeps {
     defaultProfitThresholdCents: number;
     liquidity: LiquidityConfig;
     realizationRate: number;
+    match: MatchConfig;
   };
 }
 
@@ -76,7 +80,7 @@ export async function lookup(
     if (deps.rateLimiter.inCooldown()) {
       throw new EbayUnavailableError('Marketplace lookup is cooling down after an eBay error.');
     }
-    valuation = await computeValuation(query, guardedClient(deps));
+    valuation = await computeValuation(query, guardedClient(deps), deps.config.match);
     deps.cache.set(query.cacheKey, valuation);
   }
 
@@ -93,11 +97,15 @@ export async function lookup(
     feeRate: deps.config.feeRate,
     liquidity: deps.config.liquidity,
     realizationRate: deps.config.realizationRate,
+    matchConfidence: valuation.match.confidence,
   });
 
   return {
     ...verdict,
     matchedTitle: valuation.matchedTitle,
+    matchedCategoryName: valuation.match.categoryName,
+    matchDominance: valuation.match.dominanceShare,
+    matchFiltered: valuation.match.filtered,
     cached,
     query: {
       identifier: request.identifier ?? null,

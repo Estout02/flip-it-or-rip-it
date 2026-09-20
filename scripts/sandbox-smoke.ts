@@ -75,6 +75,7 @@ console.log(`
   fees           ${dollars(result.feesCents)}
   shipping       ${dollars(result.shippingEstimateCents)}
   profit         ${dollars(result.profitCents)}
+  match          ${result.matchedCategoryName ?? '(unfiltered — barcode)'} · dominance ${(result.matchDominance * 100).toFixed(0)}% · confidence ${result.matchConfidence}
   liquidity      ${result.liquidityScore.toFixed(2)} ${result.liquidityTier} (${result.liquidityBasis})
   reason         ${result.reason} [${result.reasonCode}]
   no market data ${result.noMarketData}

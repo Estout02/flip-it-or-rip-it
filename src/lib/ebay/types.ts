@@ -9,6 +9,9 @@ export interface ListingSummary {
   priceCents: number;
   /** eBay product id when the listing is catalog-matched. */
   epid?: string;
+  /** Leaf category, transported for product matching — never interpreted here. */
+  leafCategoryId?: string;
+  leafCategoryName?: string;
 }
 
 export interface SearchResult {

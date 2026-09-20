@@ -9,7 +9,7 @@ import {
   REALIZATION_RATE_DEFAULT,
   type LiquidityConfig,
 } from './lib/verdict.js';
-import type { Valuation } from './lib/valuation.js';
+import { MATCH_DEFAULTS, type MatchConfig, type Valuation } from './lib/valuation.js';
 import { EbayTokenManager } from './lib/ebay/auth.js';
 import { BrowseApiClient } from './lib/ebay/browse.js';
 import { fetchBrowseQuota } from './lib/ebay/analytics.js';
@@ -28,6 +28,7 @@ export interface AppConfig {
   defaultProfitThresholdCents: number;
   liquidity: LiquidityConfig;
   realizationRate: number;
+  match: MatchConfig;
   port: number;
 }
 
@@ -82,6 +83,37 @@ function loadRealizationRate(env: NodeJS.ProcessEnv): number {
   return rate;
 }
 
+/**
+ * Incoherent bands are the real risk here: a medium dominance floor above the
+ * high one, or a high dispersion ceiling above the medium one, would make a tier
+ * unreachable and silently mislabel every match. A typo degrades to defaults
+ * rather than shipping nonsense confidence.
+ */
+function loadMatchConfig(env: NodeJS.ProcessEnv): MatchConfig {
+  const candidate: MatchConfig = {
+    minDominanceHigh: Number(env.MATCH_MIN_DOMINANCE_HIGH ?? MATCH_DEFAULTS.minDominanceHigh),
+    minDominanceMedium: Number(env.MATCH_MIN_DOMINANCE_MEDIUM ?? MATCH_DEFAULTS.minDominanceMedium),
+    maxDispersionHigh: Number(env.MATCH_MAX_DISPERSION_HIGH ?? MATCH_DEFAULTS.maxDispersionHigh),
+    maxDispersionMedium: Number(env.MATCH_MAX_DISPERSION_MEDIUM ?? MATCH_DEFAULTS.maxDispersionMedium),
+  };
+  const finite = Object.values(candidate).every((v) => Number.isFinite(v));
+  const valid =
+    finite &&
+    candidate.minDominanceHigh > 0 &&
+    candidate.minDominanceHigh <= 1 &&
+    candidate.minDominanceMedium > 0 &&
+    candidate.minDominanceMedium <= candidate.minDominanceHigh &&
+    candidate.maxDispersionHigh >= 1 &&
+    candidate.maxDispersionHigh <= candidate.maxDispersionMedium;
+  if (!valid) {
+    console.warn(
+      `Invalid MATCH_* configuration ${JSON.stringify(candidate)} — falling back to defaults.`,
+    );
+    return { ...MATCH_DEFAULTS };
+  }
+  return candidate;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     ebayEnv: env.EBAY_ENV === 'production' ? 'production' : 'sandbox',
@@ -97,6 +129,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     defaultProfitThresholdCents: Math.round(Number(env.PROFIT_THRESHOLD_DEFAULT ?? 10) * 100),
     liquidity: loadLiquidityConfig(env),
     realizationRate: loadRealizationRate(env),
+    match: loadMatchConfig(env),
     port: Number(env.PORT ?? 3000),
   };
 }

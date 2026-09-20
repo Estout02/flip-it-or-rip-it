@@ -1,0 +1,370 @@
+openapi: 3.1.0
+info:
+  title: Flip It or Rip It — Lookup API
+  version: 0.5.0
+  description: >
+    Core valuation pipeline contract: liquidity-gated verdict (spec 002) over a
+    realization-rate-corrected valuation (spec 003). All monetary fields are integer
+    cents (constitution Principle VI). Valuations derive from eBay Browse active
+    listings — asking prices, adjusted downward by a configured realization rate to
+    approximate sale price — and the liquidity signal remains supply-side only.
+
+    CHANGES FROM 0.4.0 (breaking — no consumers exist yet):
+      * `verdict` enum gains `UNCERTAIN`, returned when the listings could not be
+        confidently matched to one product. It is NOT a soft RIP — it means "we could
+        not identify your item", and a consumer must not treat it as a sell/donate call.
+      * `reasonCode` gains `LOW_MATCH_CONFIDENCE`.
+      * Added `matchConfidence`, `matchedCategoryName`, `matchDominance` and
+        `matchFiltered` so a caller can see what was valued and how sure we are.
+      * Title searches are now filtered to the dominant product category before
+        valuation, and the estimate is drawn from a central band of the matched
+        listings rather than the cheapest ten. Barcode lookups bypass filtering.
+paths:
+  /health:
+    get:
+      summary: Liveness check
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: ok }
+                  ebayCallsToday:
+                    type: integer
+                    description: eBay API calls consumed since 00:00 UTC (quota headroom visibility)
+  /api/lookup:
+    post:
+      summary: Item lookup → FLIP / FLIP_RISKY / RIP verdict
+      description: >
+        Provide an identifier (UPC/ISBN/EAN) and/or a free-text title. Identifier
+        takes precedence; title is the fallback when identifier resolution finds
+        nothing. Subject to a per-client cap of 50 lookups/day.
+
+        The verdict is gated by liquidity: an item whose profit clears the user's
+        threshold can still be downgraded when competing active supply is heavy.
+        The gate is downgrade-only — it never promotes an unprofitable item.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                identifier:
+                  type: string
+                  description: UPC/ISBN/EAN from a barcode scan; hyphens/spaces tolerated.
+                  examples: ["9780345391803", "045496830434"]
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: Free-text item title; used when identifier is absent or resolves to nothing.
+                  examples: ["Chrono Trigger SNES"]
+                costBasisCents:
+                  type: integer
+                  minimum: 0
+                  default: 0
+                  description: What the user paid for the item, in cents.
+                profitThresholdCents:
+                  type: integer
+                  minimum: 0
+                  description: >
+                    Per-request FLIP/RIP cutoff in cents. Defaults to server config
+                    (PROFIT_THRESHOLD_DEFAULT, $10 → 1000). Also the basis for the
+                    liquidity gate's "comfortable margin" cutoff
+                    (threshold × LIQUIDITY_RISKY_MARGIN_MULTIPLIER).
+              anyOf:
+                - required: [identifier]
+                - required: [title]
+      responses:
+        '200':
+          description: Verdict computed (including the legitimate no-market-data RIP).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerdictResult'
+              examples:
+                liquidFlip:
+                  summary: Strong liquidity, comfortably profitable → FLIP
+                  value:
+                    verdict: FLIP
+                    estimatedValueCents: 3120
+                    rawAskingMedianCents: 3900
+                    realizationRate: 0.8
+                    feesCents: 413
+                    shippingEstimateCents: 500
+                    profitCents: 2207
+                    liquidityScore: 1
+                    liquidityTier: STRONG
+                    liquidityBasis: SUPPLY_SIDE_ONLY
+                    reasonCode: PROFITABLE
+                    matchConfidence: HIGH
+                    matchedCategoryName: "Video Games"
+                    matchDominance: 0.82
+                    matchFiltered: true
+                    reason: "Clears your profit threshold with little competing supply."
+                    sampleSize: 10
+                    pricingBasis: ADJUSTED_ASKING_PRICE
+                    noMarketData: false
+                    matchedTitle: "Chrono Trigger (Super Nintendo, 1995) — Cart Only"
+                    cached: false
+                    query: { identifier: null, title: "Chrono Trigger SNES" }
+                riskyFlip:
+                  summary: Flooded market but genuinely valuable → FLIP_RISKY
+                  value:
+                    verdict: FLIP_RISKY
+                    estimatedValueCents: 12000
+                    rawAskingMedianCents: 15000
+                    realizationRate: 0.8
+                    feesCents: 1590
+                    shippingEstimateCents: 500
+                    profitCents: 9910
+                    liquidityScore: 0.03
+                    liquidityTier: WEAK
+                    liquidityBasis: SUPPLY_SIDE_ONLY
+                    reasonCode: WEAK_LIQUIDITY_HIGH_VALUE
+                    matchConfidence: HIGH
+                    matchedCategoryName: "Books"
+                    matchDominance: 0.9
+                    matchFiltered: true
+                    reason: "Worth enough to be worth listing, but 340 sellers are competing — expect a slow sale."
+                    sampleSize: 10
+                    pricingBasis: ADJUSTED_ASKING_PRICE
+                    noMarketData: false
+                    matchedTitle: "Rare Hardcover First Edition"
+                    cached: false
+                    query: { identifier: "9780345391803", title: null }
+                thinMarginRip:
+                  summary: Flooded market, thin margin → RIP
+                  value:
+                    verdict: RIP
+                    estimatedValueCents: 1760
+                    rawAskingMedianCents: 2200
+                    realizationRate: 0.8
+                    feesCents: 233
+                    shippingEstimateCents: 500
+                    profitCents: 1027
+                    liquidityScore: 0.05
+                    liquidityTier: WEAK
+                    liquidityBasis: SUPPLY_SIDE_ONLY
+                    reasonCode: WEAK_LIQUIDITY_THIN_MARGIN
+                    matchConfidence: MEDIUM
+                    matchedCategoryName: "Books"
+                    matchDominance: 0.44
+                    matchFiltered: true
+                    reason: "Only a little over your threshold, and 200 sellers are competing — not worth the wait."
+                    sampleSize: 10
+                    pricingBasis: ADJUSTED_ASKING_PRICE
+                    noMarketData: false
+                    matchedTitle: "Common Paperback"
+                    cached: true
+                    query: { identifier: null, title: "Common Paperback" }
+                uncertainMatch:
+                  summary: Listings could not be tied to one product → UNCERTAIN
+                  value:
+                    verdict: UNCERTAIN
+                    estimatedValueCents: 1200
+                    rawAskingMedianCents: 1500
+                    realizationRate: 0.8
+                    feesCents: 159
+                    shippingEstimateCents: 500
+                    profitCents: 541
+                    liquidityScore: 0.05
+                    liquidityTier: WEAK
+                    liquidityBasis: SUPPLY_SIDE_ONLY
+                    reasonCode: LOW_MATCH_CONFIDENCE
+                    reason: "Matching listings span too wide a range to identify one product — check the matched title."
+                    matchConfidence: LOW
+                    matchedCategoryName: "Video Games"
+                    matchDominance: 0.73
+                    matchFiltered: true
+                    sampleSize: 36
+                    pricingBasis: ADJUSTED_ASKING_PRICE
+                    noMarketData: false
+                    matchedTitle: "Chrono Trigger Super Famicom SNES Japanese Version"
+                    cached: false
+                    query: { identifier: null, title: "Chrono Trigger SNES" }
+        '400':
+          description: Validation failure — no identifier/title, malformed identifier, or negative money. No external calls were made.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingInput:
+                  value: { error: validation, message: "Provide a title or an identifier (UPC/ISBN/EAN)." }
+        '429':
+          description: Per-client daily lookup cap (50/day) reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                capped:
+                  value: { error: limit-reached, message: "Daily lookup limit reached. Resets at 00:00 UTC." }
+        '503':
+          description: Marketplace temporarily unreachable (cooldown, quota budget exhausted, or upstream failure) and no cached valuation exists. Distinct from a no-market-data verdict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                cooldown:
+                  value: { error: temporarily-unavailable, message: "Marketplace lookup unavailable, try again shortly." }
+components:
+  schemas:
+    VerdictResult:
+      type: object
+      required:
+        [verdict, estimatedValueCents, rawAskingMedianCents, realizationRate, feesCents,
+         shippingEstimateCents, profitCents, liquidityScore, liquidityTier, liquidityBasis,
+         reasonCode, reason, matchConfidence, matchedCategoryName, matchDominance,
+         matchFiltered, sampleSize, pricingBasis, noMarketData, matchedTitle, cached, query]
+      properties:
+        verdict:
+          type: string
+          enum: [FLIP, FLIP_RISKY, RIP, UNCERTAIN]
+          description: >
+            FLIP — profitable with acceptable liquidity.
+            FLIP_RISKY — profitable and valuable enough to be worth listing, but competing
+            supply is heavy, so expect a slow sale.
+            RIP — not worth selling (no market data, below threshold, or thin margin in a
+            flooded market).
+            UNCERTAIN — the matching listings could not be confidently tied to a single
+            product, so no verdict is claimed. Distinct from RIP: it means the item was not
+            identified, not that it lacks value. Figures are still returned for
+            transparency but must not be presented as an answer.
+        estimatedValueCents:
+          type: integer
+          description: >
+            Expected SALE value in cents: the asking-price median corrected by
+            realizationRate. This is the figure the verdict is based on and the one
+            intended for display.
+        rawAskingMedianCents:
+          type: integer
+          description: >
+            The uncorrected median of the ≤10 lowest-priced active listings. Exposed for
+            audit and for future calibration of the realization rate against real sale
+            outcomes. Not the figure to display — showing it reintroduces the optimistic
+            bias the correction exists to remove.
+        realizationRate:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1
+          description: >
+            Fraction of the asking-price median an item is expected to sell for
+            (default 0.8, configurable). A dimensionless ratio, not a money value:
+            estimatedValueCents = round(rawAskingMedianCents × realizationRate).
+        feesCents:
+          type: integer
+          description: >
+            Estimated marketplace fees (flat rate, default 13.25%), computed from the
+            CORRECTED value — fees are charged on the realized sale price.
+        shippingEstimateCents:
+          type: integer
+          description: Flat MVP estimate (default 500).
+        profitCents:
+          type: integer
+          description: >
+            Corrected estimatedValue − fees − shipping − costBasis. May be negative.
+        liquidityScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >
+            Supply-side heuristic min(1, strongMaxListings/activeListingCount) until sold
+            data exists. Unchanged from 0.2.0.
+        liquidityTier:
+          type: string
+          enum: [STRONG, MODERATE, WEAK, UNPROVEN]
+          description: >
+            Banded read of competing supply, derived from active listing count.
+            UNPROVEN means zero competing listings — liquidity cannot be assessed, and the
+            gate deliberately does not fire in either direction.
+            Only WEAK can change the verdict.
+        liquidityBasis:
+          type: string
+          enum: [SUPPLY_SIDE_ONLY]
+          description: >
+            Marks the liquidity signal as degraded — derived from competing supply only,
+            with no knowledge of actual sales, until Marketplace Insights access is granted.
+        reasonCode:
+          type: string
+          enum:
+            [NO_MARKET_DATA, LOW_MATCH_CONFIDENCE, BELOW_THRESHOLD,
+             WEAK_LIQUIDITY_THIN_MARGIN, WEAK_LIQUIDITY_HIGH_VALUE, PROFITABLE]
+          description: >
+            Stable machine-readable explanation of the verdict. Exactly one per result,
+            assigned by a fixed precedence ladder: no-market-data > low-match-confidence >
+            below-threshold > liquidity gate > profitable. Match confidence outranks the
+            liquidity gate because reasoning about supply for an item we could not identify
+            would dress up a guess.
+        reason:
+          type: string
+          description: Plain-language rendering of reasonCode, safe to show a non-technical user.
+        matchConfidence:
+          type: string
+          enum: [HIGH, MEDIUM, LOW]
+          description: >
+            How confidently the listings were tied to one product. The worse of two
+            independent measures: how dominant the matched category was, and how widely
+            prices vary WITHIN it. A dominant category can still be LOW confidence when it
+            contains several distinct products (variants, lots, unrelated titles).
+        matchedCategoryName:
+          type: [string, 'null']
+          description: >
+            Leaf category the valuation was drawn from. Null for barcode lookups, which
+            bypass filtering, and for empty result sets.
+        matchDominance:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Share of returned listings belonging to the matched group.
+        matchFiltered:
+          type: boolean
+          description: >
+            False when filtering was bypassed because the listings came from a barcode
+            (GTIN) search, which eBay already constrains to one product.
+        sampleSize:
+          type: integer
+          minimum: 0
+          description: >
+            Number of listings behind the estimate (≤50). These are the MATCHED listings,
+            not the cheapest ones.
+        pricingBasis:
+          type: string
+          enum: [ADJUSTED_ASKING_PRICE]
+          description: >
+            Valuation derives from active-listing asking prices adjusted by the
+            realization rate — not from sold prices, which eBay does not make available
+            to this application. Reads ADJUSTED_ASKING_PRICE at every rate, including a
+            rate of 1.0, since the value still passes through the correction step.
+        noMarketData:
+          type: boolean
+          description: >
+            True when no matching listings were found — verdict is RIP with zero value.
+            Retained from 0.2.0; equivalent to reasonCode == NO_MARKET_DATA.
+        matchedTitle:
+          type: [string, 'null']
+          description: Title of the best-matched listing/product, for user mismatch-spotting.
+        cached:
+          type: boolean
+          description: True when served from the ~24h valuation cache (zero external calls).
+        query:
+          type: object
+          properties:
+            identifier: { type: [string, 'null'] }
+            title: { type: [string, 'null'] }
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          enum: [validation, limit-reached, temporarily-unavailable]
+        message:
+          type: string

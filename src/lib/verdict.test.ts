@@ -466,3 +466,76 @@ describe('valuation honesty and auditability (US2)', () => {
     expect(result.estimatedValueCents).toBe(3937);
   });
 });
+
+describe('computeVerdict — uncertain match (US3)', () => {
+  const base = {
+    pricingBasis: 'ADJUSTED_ASKING_PRICE' as const,
+    shippingEstimateCents: 500,
+    costBasisCents: 0,
+    profitThresholdCents: 1000,
+    realizationRate: 1,
+  };
+
+  it('returns UNCERTAIN when the product match is low confidence', () => {
+    const result = computeVerdict({
+      ...base,
+      samplePricesCents: [4000],
+      activeListingCount: 5,
+      matchConfidence: 'LOW',
+    });
+    expect(result.verdict).toBe('UNCERTAIN');
+    expect(result.reasonCode).toBe('LOW_MATCH_CONFIDENCE');
+    expect(result.reason.length).toBeGreaterThan(0);
+  });
+
+  it('still returns figures alongside UNCERTAIN for transparency', () => {
+    const result = computeVerdict({
+      ...base,
+      samplePricesCents: [4000],
+      activeListingCount: 5,
+      matchConfidence: 'LOW',
+    });
+    expect(result.estimatedValueCents).toBe(4000);
+    expect(result.profitCents).toBeGreaterThan(0);
+  });
+
+  it('lets no-market-data outrank low confidence', () => {
+    const result = computeVerdict({
+      ...base,
+      samplePricesCents: [],
+      activeListingCount: 5,
+      matchConfidence: 'LOW',
+    });
+    expect(result.verdict).toBe('RIP');
+    expect(result.reasonCode).toBe('NO_MARKET_DATA');
+  });
+
+  it('outranks the liquidity gate', () => {
+    // Weak liquidity AND low confidence: reasoning about supply for an item we
+    // could not identify would dress up a guess.
+    const result = computeVerdict({
+      ...base,
+      samplePricesCents: [4000],
+      activeListingCount: 300,
+      matchConfidence: 'LOW',
+    });
+    expect(result.verdict).toBe('UNCERTAIN');
+    expect(result.reasonCode).toBe('LOW_MATCH_CONFIDENCE');
+  });
+
+  it.each([['HIGH'], ['MEDIUM']] as const)(
+    'leaves every existing path untouched at %s confidence',
+    (matchConfidence) => {
+      const flip = computeVerdict({ ...base, samplePricesCents: [4000], activeListingCount: 5, matchConfidence });
+      const rip = computeVerdict({ ...base, samplePricesCents: [1200], activeListingCount: 5, matchConfidence });
+      expect(flip.verdict).toBe('FLIP');
+      expect(rip.verdict).toBe('RIP');
+    },
+  );
+
+  it('defaults to HIGH when no confidence is supplied', () => {
+    const result = computeVerdict({ ...base, samplePricesCents: [4000], activeListingCount: 5 });
+    expect(result.matchConfidence).toBe('HIGH');
+    expect(result.verdict).toBe('FLIP');
+  });
+});
