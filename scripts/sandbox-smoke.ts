@@ -71,6 +71,7 @@ console.log(`
   verdict        ${result.verdict}
   matched title  ${result.matchedTitle ?? '(no market data)'}
   est. value     ${dollars(result.estimatedValueCents)} (${result.pricingBasis}, sample ${result.sampleSize})
+  raw ask median ${dollars(result.rawAskingMedianCents)} × rate ${result.realizationRate}
   fees           ${dollars(result.feesCents)}
   shipping       ${dollars(result.shippingEstimateCents)}
   profit         ${dollars(result.profitCents)}

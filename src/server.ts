@@ -4,7 +4,11 @@ import { TtlCache } from './lib/cache.js';
 import { RateLimiter } from './lib/rate-limit.js';
 import { lookup, type LookupRequest } from './lib/pipeline.js';
 import { ValidationError } from './lib/identify.js';
-import { LIQUIDITY_DEFAULTS, type LiquidityConfig } from './lib/verdict.js';
+import {
+  LIQUIDITY_DEFAULTS,
+  REALIZATION_RATE_DEFAULT,
+  type LiquidityConfig,
+} from './lib/verdict.js';
 import type { Valuation } from './lib/valuation.js';
 import { EbayTokenManager } from './lib/ebay/auth.js';
 import { BrowseApiClient } from './lib/ebay/browse.js';
@@ -23,6 +27,7 @@ export interface AppConfig {
   ebayDailyCallBudget: number;
   defaultProfitThresholdCents: number;
   liquidity: LiquidityConfig;
+  realizationRate: number;
   port: number;
 }
 
@@ -60,6 +65,23 @@ function loadLiquidityConfig(env: NodeJS.ProcessEnv): LiquidityConfig {
   return candidate;
 }
 
+/**
+ * Bounded at 1 because the asking price is the transaction ceiling for the
+ * fixed-price listings we query — a rate above 1 would claim items sell for more
+ * than they are listed at. A rate of 0 would RIP everything.
+ */
+function loadRealizationRate(env: NodeJS.ProcessEnv): number {
+  const raw = env.VALUATION_REALIZATION_RATE;
+  const rate = Number(raw ?? REALIZATION_RATE_DEFAULT);
+  if (!Number.isFinite(rate) || rate <= 0 || rate > 1) {
+    console.warn(
+      `Invalid VALUATION_REALIZATION_RATE ${JSON.stringify(raw)} — falling back to ${REALIZATION_RATE_DEFAULT}.`,
+    );
+    return REALIZATION_RATE_DEFAULT;
+  }
+  return rate;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     ebayEnv: env.EBAY_ENV === 'production' ? 'production' : 'sandbox',
@@ -74,6 +96,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // Env keeps dollars for founder convenience; converted to cents exactly once here.
     defaultProfitThresholdCents: Math.round(Number(env.PROFIT_THRESHOLD_DEFAULT ?? 10) * 100),
     liquidity: loadLiquidityConfig(env),
+    realizationRate: loadRealizationRate(env),
     port: Number(env.PORT ?? 3000),
   };
 }

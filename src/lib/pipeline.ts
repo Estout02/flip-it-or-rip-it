@@ -34,6 +34,7 @@ export interface PipelineDeps {
     shippingFlatCents: number;
     defaultProfitThresholdCents: number;
     liquidity: LiquidityConfig;
+    realizationRate: number;
   };
 }
 
@@ -91,6 +92,7 @@ export async function lookup(
       request.profitThresholdCents ?? deps.config.defaultProfitThresholdCents,
     feeRate: deps.config.feeRate,
     liquidity: deps.config.liquidity,
+    realizationRate: deps.config.realizationRate,
   });
 
   return {

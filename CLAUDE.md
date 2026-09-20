@@ -20,6 +20,14 @@ The core valuation pipeline is real (spec `specs/001-valuation-pipeline/`): iden
 `src/lib/verdict.ts` — orchestrated by `src/lib/pipeline.ts` behind a 24h in-memory valuation cache,
 a 50/day per-client cap, and a global daily eBay-call budget.
 
+Valuation applies a **realization rate** (spec `specs/003-realization-rate/`): sellers list
+aspirationally, so the asking-price median is biased high and produced false FLIPs. The reported
+`estimatedValueCents` is now `round(median × VALUATION_REALIZATION_RATE)` — expected *sale* price,
+not asking price — with fees computed from it, `pricingBasis: ADJUSTED_ASKING_PRICE`, and both
+`rawAskingMedianCents` and `realizationRate` on the response so the figure is reconstructable.
+**The 0.8 default is a founder judgment call, not a measured figure**; the feature's real
+deliverable is that it stays retunable once user-reported sale outcomes exist to calibrate it.
+
 The verdict is **liquidity-gated** (spec `specs/002-liquidity-score/`) and therefore **three-way**:
 `FLIP` / `FLIP_RISKY` / `RIP`. Every result carries a `liquidityTier` (STRONG / MODERATE / WEAK /
 UNPROVEN) derived from active-listing count, plus a `reasonCode` and plain-language `reason`. A
@@ -32,7 +40,7 @@ the only code that touches the real sandbox is the opt-in smoke script:
 `EBAY_MARKETPLACE_ID`, `EBAY_FEE_RATE`, `SHIPPING_FLAT_CENTS`, `VALUATION_CACHE_TTL_HOURS`,
 `LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`, plus the liquidity knobs
 `LIQUIDITY_STRONG_MAX_LISTINGS`, `LIQUIDITY_MODERATE_MAX_LISTINGS`,
-`LIQUIDITY_RISKY_MARGIN_MULTIPLIER`. The phone frontend (likely iOS-first) comes later and
+`LIQUIDITY_RISKY_MARGIN_MULTIPLIER`, and `VALUATION_REALIZATION_RATE`. The phone frontend (likely iOS-first) comes later and
 will consume this API.
 
 ## Stack

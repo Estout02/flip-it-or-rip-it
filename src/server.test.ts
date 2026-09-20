@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, loadConfig, type AppConfig } from './server.js';
-import { LIQUIDITY_DEFAULTS } from './lib/verdict.js';
+import { LIQUIDITY_DEFAULTS, REALIZATION_RATE_DEFAULT } from './lib/verdict.js';
 import { TtlCache } from './lib/cache.js';
 import { RateLimiter } from './lib/rate-limit.js';
 import { EbayUnavailableError, type EbayBrowseClient, type SearchResult } from './lib/ebay/types.js';
@@ -13,6 +13,8 @@ const REQUIRED_VERDICT_FIELDS = [
   'feesCents',
   'shippingEstimateCents',
   'profitCents',
+  'rawAskingMedianCents',
+  'realizationRate',
   'liquidityScore',
   'liquidityTier',
   'liquidityBasis',
@@ -70,6 +72,8 @@ const testConfig: AppConfig = {
   ebayDailyCallBudget: 2500,
   defaultProfitThresholdCents: 1000,
   liquidity: LIQUIDITY_DEFAULTS,
+  // Pinned at 1 so pre-existing expectations keep proving the profit math (research R9).
+  realizationRate: 1,
   port: 0,
 };
 
@@ -111,7 +115,7 @@ describe('POST /api/lookup — US1 barcode verdict', () => {
     for (const field of REQUIRED_VERDICT_FIELDS) {
       expect(body, `missing field ${field}`).toHaveProperty(field);
     }
-    expect(body.pricingBasis).toBe('ASKING_PRICE');
+    expect(body.pricingBasis).toBe('ADJUSTED_ASKING_PRICE');
     expect(body.liquidityBasis).toBe('SUPPLY_SIDE_ONLY');
     expect(body.matchedTitle).toBe('Chrono Trigger (SNES, 1995)');
     expect(body.cached).toBe(false);
@@ -527,5 +531,127 @@ describe('POST /api/lookup — liquidity honesty (US3)', () => {
     const body = (await lookup(app, { title: 'Sole Listing' })).json();
     expect(body.liquidityTier).toBe('UNPROVEN');
     expect(body.verdict).toBe('FLIP');
+  });
+});
+
+describe('loadConfig — realization rate', () => {
+  it('defaults when the env var is unset', () => {
+    expect(loadConfig({}).realizationRate).toBe(REALIZATION_RATE_DEFAULT);
+  });
+
+  it('reads a valid configured rate', () => {
+    expect(loadConfig({ VALUATION_REALIZATION_RATE: '0.65' }).realizationRate).toBe(0.65);
+    expect(loadConfig({ VALUATION_REALIZATION_RATE: '1' }).realizationRate).toBe(1);
+  });
+
+  it.each([['zero', '0'], ['above one', '1.5'], ['negative', '-1'], ['non-numeric', 'most of it']])(
+    'falls back to the default on an invalid rate (%s)',
+    (_label, value) => {
+      expect(loadConfig({ VALUATION_REALIZATION_RATE: value }).realizationRate).toBe(
+        REALIZATION_RATE_DEFAULT,
+      );
+    },
+  );
+});
+
+/** ~$18 median: FLIP on the raw median, RIP once the 0.8 correction applies. */
+const BORDERLINE_MARKET: SearchResult = {
+  listings: [1750, 1800, 1850].map((cents) => listing(cents, 'Borderline Paperback')),
+  totalActive: 10,
+};
+
+describe('POST /api/lookup — realization rate at the production default (US1)', () => {
+  it('RIPs a borderline item that the uncorrected median would have FLIPped', async () => {
+    const atDefault = makeApp({
+      client: new FakeBrowseClient(() => BORDERLINE_MARKET),
+      config: { realizationRate: REALIZATION_RATE_DEFAULT },
+    });
+    const uncorrected = makeApp({
+      client: new FakeBrowseClient(() => BORDERLINE_MARKET),
+      config: { realizationRate: 1 },
+    });
+
+    expect((await lookup(uncorrected.app, { title: 'Borderline' })).json().verdict).toBe('FLIP');
+    expect((await lookup(atDefault.app, { title: 'Borderline' })).json().verdict).toBe('RIP');
+  });
+
+  it('still FLIPs a comfortably profitable item at the default rate', async () => {
+    const { app } = makeApp({
+      client: new FakeBrowseClient(() => FLIP_MARKET),
+      config: { realizationRate: REALIZATION_RATE_DEFAULT },
+    });
+    const body = (await lookup(app, { title: 'Chrono Trigger' })).json();
+    expect(body.verdict).toBe('FLIP');
+    expect(body.estimatedValueCents).toBe(Math.round(3900 * REALIZATION_RATE_DEFAULT));
+  });
+});
+
+describe('POST /api/lookup — valuation honesty (US2)', () => {
+  it('labels the basis as adjusted and stays reconstructable', async () => {
+    const { app } = makeApp({
+      client: new FakeBrowseClient(() => FLIP_MARKET),
+      config: { realizationRate: REALIZATION_RATE_DEFAULT },
+    });
+    const body = (await lookup(app, { title: 'Chrono Trigger' })).json();
+
+    expect(body.pricingBasis).toBe('ADJUSTED_ASKING_PRICE');
+    expect(body.rawAskingMedianCents).toBe(3900);
+    expect(body.realizationRate).toBe(REALIZATION_RATE_DEFAULT);
+    expect(Math.round(body.rawAskingMedianCents * body.realizationRate)).toBe(
+      body.estimatedValueCents,
+    );
+  });
+});
+
+describe('POST /api/lookup — the rate is retunable (US3)', () => {
+  it('shifts value and verdict when the configured rate changes, with no code change', async () => {
+    const market = BORDERLINE_MARKET; // ~$18 median
+    const generous = makeApp({
+      client: new FakeBrowseClient(() => market),
+      config: { realizationRate: 1 },
+    });
+    const harsh = makeApp({
+      client: new FakeBrowseClient(() => market),
+      config: { realizationRate: 0.5 },
+    });
+
+    const generousBody = (await lookup(generous.app, { title: 'Borderline' })).json();
+    const harshBody = (await lookup(harsh.app, { title: 'Borderline' })).json();
+
+    expect(generousBody.estimatedValueCents).toBe(1800);
+    expect(harshBody.estimatedValueCents).toBe(900);
+    expect(generousBody.verdict).toBe('FLIP');
+    expect(harshBody.verdict).toBe('RIP');
+  });
+
+  it('reports back the rate it was configured with', async () => {
+    for (const rate of [1, 0.75, 0.5]) {
+      const { app } = makeApp({
+        client: new FakeBrowseClient(() => FLIP_MARKET),
+        config: { realizationRate: rate },
+      });
+      const body = (await lookup(app, { title: 'Chrono Trigger' })).json();
+      expect(body.realizationRate).toBe(rate);
+      expect(body.estimatedValueCents).toBe(Math.round(3900 * rate));
+    }
+  });
+});
+
+describe('liquidity gate regression at the production rate (spec 002 × 003)', () => {
+  // The 002 gate tests are pinned at rate 1. The correction narrows FLOODED_THIN's
+  // margin from $4.08 to $1.66, which is close enough to the split to be worth
+  // asserting rather than assuming.
+  it.each([
+    ['valuable flooded market', FLOODED_VALUABLE, 'FLIP_RISKY', 'WEAK_LIQUIDITY_HIGH_VALUE'],
+    ['thin-margin flooded market', FLOODED_THIN, 'RIP', 'WEAK_LIQUIDITY_THIN_MARGIN'],
+  ])('still gates %s correctly at the default rate', async (_label, market, verdict, reasonCode) => {
+    const { app } = makeApp({
+      client: new FakeBrowseClient(() => market),
+      config: { realizationRate: REALIZATION_RATE_DEFAULT },
+    });
+    const body = (await lookup(app, { title: 'Flooded Item' })).json();
+    expect(body.verdict).toBe(verdict);
+    expect(body.reasonCode).toBe(reasonCode);
+    expect(body.profitCents).toBeGreaterThanOrEqual(1000); // still profitable, still gated
   });
 });

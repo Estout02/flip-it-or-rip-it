@@ -3,6 +3,7 @@ import {
   computeVerdict,
   estimateValueCents,
   liquidityScore,
+  applyRealizationRate,
   liquidityTier,
   resolveLiquidityConfig,
   supplySideLiquidity,
@@ -82,13 +83,35 @@ describe('liquidityTier', () => {
   });
 });
 
+describe('applyRealizationRate', () => {
+  it('haircuts the median by the given rate', () => {
+    expect(applyRealizationRate(4000, 0.8)).toBe(3200);
+  });
+
+  it('is the identity at a rate of 1', () => {
+    expect(applyRealizationRate(3937, 1)).toBe(3937);
+  });
+
+  it('rounds to whole cents', () => {
+    // 1875 * 0.8 = 1500 exactly; 1874 * 0.8 = 1499.2 → 1499
+    expect(applyRealizationRate(1875, 0.8)).toBe(1500);
+    expect(applyRealizationRate(1874, 0.8)).toBe(1499);
+    expect(Number.isInteger(applyRealizationRate(3333, 0.8))).toBe(true);
+  });
+
+  it('leaves a zero value at zero', () => {
+    expect(applyRealizationRate(0, 0.8)).toBe(0);
+  });
+});
+
 describe('computeVerdict', () => {
   const base = {
-    pricingBasis: 'ASKING_PRICE' as const,
+    pricingBasis: 'ADJUSTED_ASKING_PRICE' as const,
     activeListingCount: 10,
     shippingEstimateCents: 500,
     costBasisCents: 0,
     profitThresholdCents: 1000, // the founder's $10 rule
+    realizationRate: 1,
   };
 
   it('says FLIP when profit clears the threshold', () => {
@@ -140,7 +163,7 @@ describe('computeVerdict', () => {
 
   it('always flags the pricing and liquidity bases', () => {
     const result = computeVerdict({ ...base, samplePricesCents: [4000] });
-    expect(result.pricingBasis).toBe('ASKING_PRICE');
+    expect(result.pricingBasis).toBe('ADJUSTED_ASKING_PRICE');
     expect(result.liquidityBasis).toBe('SUPPLY_SIDE_ONLY');
   });
 
@@ -156,10 +179,11 @@ describe('computeVerdict', () => {
 
 describe('computeVerdict — liquidity gate (US1)', () => {
   const base = {
-    pricingBasis: 'ASKING_PRICE' as const,
+    pricingBasis: 'ADJUSTED_ASKING_PRICE' as const,
     shippingEstimateCents: 500,
     costBasisCents: 0,
     profitThresholdCents: 1000,
+    realizationRate: 1,
   };
   const FLOODED = 200; // > moderateMaxListings → WEAK
   /** value 4000 → fees 530 → profit 2970, comfortably past 2x the $10 threshold. */
@@ -261,10 +285,11 @@ describe('computeVerdict — liquidity gate (US1)', () => {
 
 describe('verdict reasons (US2)', () => {
   const base = {
-    pricingBasis: 'ASKING_PRICE' as const,
+    pricingBasis: 'ADJUSTED_ASKING_PRICE' as const,
     shippingEstimateCents: 500,
     costBasisCents: 0,
     profitThresholdCents: 1000,
+    realizationRate: 1,
   };
 
   it.each([
@@ -312,10 +337,11 @@ describe('verdict reasons (US2)', () => {
 
 describe('liquidity honesty (US3)', () => {
   const base = {
-    pricingBasis: 'ASKING_PRICE' as const,
+    pricingBasis: 'ADJUSTED_ASKING_PRICE' as const,
     shippingEstimateCents: 500,
     costBasisCents: 0,
     profitThresholdCents: 1000,
+    realizationRate: 1,
   };
 
   it('reports the tier alongside the degraded-signal marker', () => {
@@ -339,5 +365,104 @@ describe('liquidity honesty (US3)', () => {
       const result = computeVerdict({ ...base, samplePricesCents, activeListingCount: 340 });
       expect(result.reason).not.toMatch(/\bsold\b|sell-through|sold-through|\bsales\b/i);
     }
+  });
+});
+
+describe('computeVerdict — realization rate correction (US1)', () => {
+  // No realizationRate here on purpose: these exercise the production default.
+  const base = {
+    pricingBasis: 'ADJUSTED_ASKING_PRICE' as const,
+    activeListingCount: 10,
+    shippingEstimateCents: 500,
+    costBasisCents: 0,
+    profitThresholdCents: 1000,
+  };
+
+  it('RIPs an item that only cleared the threshold on the uncorrected median', () => {
+    // 1800 ask → FLIP uncorrected (profit 1061); 1440 corrected → RIP (profit 749).
+    const corrected = computeVerdict({ ...base, samplePricesCents: [1800] });
+    const uncorrected = computeVerdict({ ...base, samplePricesCents: [1800], realizationRate: 1 });
+    expect(uncorrected.verdict).toBe('FLIP');
+    expect(corrected.verdict).toBe('RIP');
+    expect(corrected.estimatedValueCents).toBeLessThan(uncorrected.estimatedValueCents);
+  });
+
+  it('leaves a comfortably profitable item as FLIP', () => {
+    const result = computeVerdict({ ...base, samplePricesCents: [4000] });
+    expect(result.estimatedValueCents).toBe(3200);
+    expect(result.verdict).toBe('FLIP');
+  });
+
+  it('computes fees from the corrected value, never the raw median', () => {
+    const result = computeVerdict({ ...base, samplePricesCents: [4000] });
+    expect(result.feesCents).toBe(Math.round(3200 * 0.1325));
+    expect(result.feesCents).not.toBe(Math.round(4000 * 0.1325));
+  });
+
+  it('derives profit from the corrected value', () => {
+    const result = computeVerdict({ ...base, samplePricesCents: [4000] });
+    expect(result.profitCents).toBe(
+      result.estimatedValueCents - result.feesCents - base.shippingEstimateCents,
+    );
+  });
+
+  it('leaves the no-market-data outcome untouched', () => {
+    const result = computeVerdict({ ...base, samplePricesCents: [] });
+    expect(result.estimatedValueCents).toBe(0);
+    expect(result.verdict).toBe('RIP');
+    expect(result.reasonCode).toBe('NO_MARKET_DATA');
+    expect(result.noMarketData).toBe(true);
+  });
+
+  it('keeps the corrected value a whole number of cents', () => {
+    const result = computeVerdict({ ...base, samplePricesCents: [3333] });
+    expect(Number.isInteger(result.estimatedValueCents)).toBe(true);
+    expect(result.estimatedValueCents).toBe(Math.round(3333 * 0.8));
+  });
+});
+
+describe('valuation honesty and auditability (US2)', () => {
+  const base = {
+    pricingBasis: 'ADJUSTED_ASKING_PRICE' as const,
+    activeListingCount: 10,
+    shippingEstimateCents: 500,
+    costBasisCents: 0,
+    profitThresholdCents: 1000,
+  };
+
+  it.each([
+    ['the default rate', undefined],
+    ['a rate of exactly 1', 1],
+  ])('labels the basis ADJUSTED_ASKING_PRICE at %s', (_label, realizationRate) => {
+    // Constant by design: at rate 1 the value has still passed through the
+    // correction step, so the label does not flicker with configuration.
+    const result = computeVerdict({
+      ...base,
+      samplePricesCents: [4000],
+      ...(realizationRate === undefined ? {} : { realizationRate }),
+    });
+    expect(result.pricingBasis).toBe('ADJUSTED_ASKING_PRICE');
+  });
+
+  it('exposes the raw median and the applied rate on every result', () => {
+    const result = computeVerdict({ ...base, samplePricesCents: [3500, 4000, 4500] });
+    expect(result.rawAskingMedianCents).toBe(4000);
+    expect(result.realizationRate).toBe(0.8);
+  });
+
+  it.each([[4000], [1875], [3333], [99], [0]])(
+    'stays reconstructable from raw median and rate (sample %i)',
+    (price) => {
+      const result = computeVerdict({ ...base, samplePricesCents: price === 0 ? [] : [price] });
+      expect(Math.round(result.rawAskingMedianCents * result.realizationRate)).toBe(
+        result.estimatedValueCents,
+      );
+    },
+  );
+
+  it('reports equal raw and corrected values at a rate of 1', () => {
+    const result = computeVerdict({ ...base, samplePricesCents: [3937], realizationRate: 1 });
+    expect(result.rawAskingMedianCents).toBe(3937);
+    expect(result.estimatedValueCents).toBe(3937);
   });
 });

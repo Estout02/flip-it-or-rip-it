@@ -1,6 +1,6 @@
 // Core flip/rip decision math. All money values are integer cents.
 
-export type PricingBasis = 'ASKING_PRICE';
+export type PricingBasis = 'ADJUSTED_ASKING_PRICE';
 export type LiquidityBasis = 'SUPPLY_SIDE_ONLY';
 
 /** Banded read of competing supply, derived from active listing count alone. */
@@ -43,11 +43,18 @@ export interface ValuationInput {
   feeRate?: number;
   /** Liquidity tier/gate tuning; per-field defaults from LIQUIDITY_DEFAULTS. */
   liquidity?: Partial<LiquidityConfig>;
+  /** Asking-price → sale-price correction; defaults to REALIZATION_RATE_DEFAULT. */
+  realizationRate?: number;
 }
 
 export interface Verdict {
   verdict: 'FLIP' | 'FLIP_RISKY' | 'RIP';
+  /** Expected SALE value: the asking median corrected by realizationRate. */
   estimatedValueCents: number;
+  /** The uncorrected median, for audit and future calibration. Not for display. */
+  rawAskingMedianCents: number;
+  /** The rate actually applied, so estimatedValueCents can be reconstructed. */
+  realizationRate: number;
   feesCents: number;
   shippingEstimateCents: number;
   profitCents: number;
@@ -70,6 +77,19 @@ const DEFAULT_FEE_RATE = 0.1325;
 
 /** Active-listing count at or below which supply reads as fully liquid. */
 export const LIQUIDITY_STRONG_SUPPLY_MAX = 10;
+
+/**
+ * Fraction of the asking-price median an item is expected to sell for. Sellers
+ * list aspirationally, so an uncorrected median is biased high — and biased in
+ * the direction that produces false FLIPs. A judgment call awaiting calibration
+ * against real sale outcomes, not a measured figure.
+ */
+export const REALIZATION_RATE_DEFAULT = 0.8;
+
+/** Asking-price median → expected sale value, in integer cents. */
+export function applyRealizationRate(rawCents: number, rate: number): number {
+  return Math.round(rawCents * rate);
+}
 
 export const LIQUIDITY_DEFAULTS: LiquidityConfig = {
   strongMaxListings: LIQUIDITY_STRONG_SUPPLY_MAX,
@@ -202,7 +222,9 @@ function decideVerdict(args: {
 export function computeVerdict(input: ValuationInput): Verdict {
   const feeRate = input.feeRate ?? DEFAULT_FEE_RATE;
   const liquidity = resolveLiquidityConfig(input.liquidity);
-  const estimatedValueCents = estimateValueCents(input.samplePricesCents);
+  const realizationRate = input.realizationRate ?? REALIZATION_RATE_DEFAULT;
+  const rawAskingMedianCents = estimateValueCents(input.samplePricesCents);
+  const estimatedValueCents = applyRealizationRate(rawAskingMedianCents, realizationRate);
   const feesCents = Math.round(estimatedValueCents * feeRate);
   const profitCents =
     estimatedValueCents - feesCents - input.shippingEstimateCents - input.costBasisCents;
@@ -224,6 +246,8 @@ export function computeVerdict(input: ValuationInput): Verdict {
   return {
     verdict,
     estimatedValueCents,
+    rawAskingMedianCents,
+    realizationRate,
     feesCents,
     shippingEstimateCents: input.shippingEstimateCents,
     profitCents,
