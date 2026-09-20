@@ -2,12 +2,11 @@
 // Valuation is the cached unit — per-request cost basis and threshold are
 // applied later so users share it (research R6).
 
-import { estimateValueCents, type PricingBasis } from './verdict.js';
+import type { PricingBasis } from './verdict.js';
 import type { ItemQuery } from './identify.js';
 import type { EbayBrowseClient, SearchResult } from './ebay/types.js';
 
 export interface Valuation {
-  estimatedValueCents: number;
   /** The ≤10 lowest positive asking prices actually used (audit/debug). */
   samplePricesCents: number[];
   sampleSize: number;
@@ -47,11 +46,10 @@ export async function computeValuation(
     .slice(0, SAMPLE_MAX);
 
   return {
-    estimatedValueCents: estimateValueCents(samplePricesCents),
     samplePricesCents,
     sampleSize: samplePricesCents.length,
     activeListingCount: result.totalActive,
-    pricingBasis: 'ASKING_PRICE',
+    pricingBasis: 'ADJUSTED_ASKING_PRICE',
     matchedTitle: result.listings[0]?.title ?? null,
     computedAt: new Date().toISOString(),
   };

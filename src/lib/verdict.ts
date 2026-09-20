@@ -1,7 +1,27 @@
 // Core flip/rip decision math. All money values are integer cents.
 
-export type PricingBasis = 'ASKING_PRICE';
+export type PricingBasis = 'ADJUSTED_ASKING_PRICE';
 export type LiquidityBasis = 'SUPPLY_SIDE_ONLY';
+
+/** Banded read of competing supply, derived from active listing count alone. */
+export type LiquidityTier = 'STRONG' | 'MODERATE' | 'WEAK' | 'UNPROVEN';
+
+/** Why the verdict came out the way it did. Exactly one is emitted per result. */
+export type VerdictReasonCode =
+  | 'NO_MARKET_DATA'
+  | 'BELOW_THRESHOLD'
+  | 'WEAK_LIQUIDITY_THIN_MARGIN'
+  | 'WEAK_LIQUIDITY_HIGH_VALUE'
+  | 'PROFITABLE';
+
+export interface LiquidityConfig {
+  /** Active-listing count at or below which supply reads as fully liquid. */
+  strongMaxListings: number;
+  /** Upper bound of the moderate band; above it, supply is weak. */
+  moderateMaxListings: number;
+  /** Profit multiple of the threshold that counts as a comfortable margin. */
+  riskyMarginMultiplier: number;
+}
 
 export interface ValuationInput {
   /**
@@ -21,17 +41,32 @@ export interface ValuationInput {
   profitThresholdCents: number;
   /** eBay final value fee rate (varies by category; ~13.25% typical). */
   feeRate?: number;
+  /** Liquidity tier/gate tuning; per-field defaults from LIQUIDITY_DEFAULTS. */
+  liquidity?: Partial<LiquidityConfig>;
+  /** Asking-price → sale-price correction; defaults to REALIZATION_RATE_DEFAULT. */
+  realizationRate?: number;
 }
 
 export interface Verdict {
-  verdict: 'FLIP' | 'RIP';
+  verdict: 'FLIP' | 'FLIP_RISKY' | 'RIP';
+  /** Expected SALE value: the asking median corrected by realizationRate. */
   estimatedValueCents: number;
+  /** The uncorrected median, for audit and future calibration. Not for display. */
+  rawAskingMedianCents: number;
+  /** The rate actually applied, so estimatedValueCents can be reconstructed. */
+  realizationRate: number;
   feesCents: number;
   shippingEstimateCents: number;
   profitCents: number;
   /** 0–1; see supplySideLiquidity — degraded signal until sold data exists. */
   liquidityScore: number;
+  /** Banded read of competing supply; only WEAK can change the verdict. */
+  liquidityTier: LiquidityTier;
   liquidityBasis: LiquidityBasis;
+  /** Stable machine-readable explanation; exactly one per result. */
+  reasonCode: VerdictReasonCode;
+  /** Plain-language rendering of reasonCode, safe to show a user. */
+  reason: string;
   sampleSize: number;
   pricingBasis: PricingBasis;
   /** True iff the sample was empty — no evidence of a market. */
@@ -42,6 +77,46 @@ const DEFAULT_FEE_RATE = 0.1325;
 
 /** Active-listing count at or below which supply reads as fully liquid. */
 export const LIQUIDITY_STRONG_SUPPLY_MAX = 10;
+
+/**
+ * Fraction of the asking-price median an item is expected to sell for. Sellers
+ * list aspirationally, so an uncorrected median is biased high — and biased in
+ * the direction that produces false FLIPs. A judgment call awaiting calibration
+ * against real sale outcomes, not a measured figure.
+ */
+export const REALIZATION_RATE_DEFAULT = 0.8;
+
+/** Asking-price median → expected sale value, in integer cents. */
+export function applyRealizationRate(rawCents: number, rate: number): number {
+  return Math.round(rawCents * rate);
+}
+
+export const LIQUIDITY_DEFAULTS: LiquidityConfig = {
+  strongMaxListings: LIQUIDITY_STRONG_SUPPLY_MAX,
+  moderateMaxListings: 50,
+  riskyMarginMultiplier: 2,
+};
+
+export function resolveLiquidityConfig(
+  overrides: Partial<LiquidityConfig> = {},
+): LiquidityConfig {
+  return { ...LIQUIDITY_DEFAULTS, ...overrides };
+}
+
+/**
+ * Tier is a pure function of active supply and never consults the price sample:
+ * "how crowded is this market" and "do we have prices" are different questions,
+ * and the no-market-data branch already outranks the tier (research R7).
+ */
+export function liquidityTier(
+  activeListingCount: number,
+  config: LiquidityConfig = LIQUIDITY_DEFAULTS,
+): LiquidityTier {
+  if (activeListingCount <= 0) return 'UNPROVEN';
+  if (activeListingCount <= config.strongMaxListings) return 'STRONG';
+  if (activeListingCount <= config.moderateMaxListings) return 'MODERATE';
+  return 'WEAK';
+}
 
 /** Median of the sample prices — robust against one outlier skewing the value. */
 export function estimateValueCents(samplePricesCents: number[]): number {
@@ -75,26 +150,115 @@ export function liquidityScore(soldCount: number, activeListingCount: number): n
   return soldCount / (soldCount + activeListingCount);
 }
 
+export const VERDICT_REASON_CODES = [
+  'NO_MARKET_DATA',
+  'BELOW_THRESHOLD',
+  'WEAK_LIQUIDITY_THIN_MARGIN',
+  'WEAK_LIQUIDITY_HIGH_VALUE',
+  'PROFITABLE',
+] as const satisfies readonly VerdictReasonCode[];
+
+export interface ReasonContext {
+  activeListingCount: number;
+  tier: LiquidityTier;
+}
+
+/**
+ * Copy is keyed by a total Record so the compiler proves every code has text.
+ * Wording claims competing-supply knowledge only — never actual sales, which
+ * we do not have until Marketplace Insights access lands (constitution I).
+ */
+const REASON_TEXT: Record<VerdictReasonCode, (ctx: ReasonContext) => string> = {
+  NO_MARKET_DATA: () => 'No matching listings found, so there is no evidence of resale value.',
+  BELOW_THRESHOLD: () => 'Projected profit lands under your threshold.',
+  WEAK_LIQUIDITY_THIN_MARGIN: ({ activeListingCount }) =>
+    `Only a little over your threshold, and ${activeListingCount} sellers are competing — not worth the wait.`,
+  WEAK_LIQUIDITY_HIGH_VALUE: ({ activeListingCount }) =>
+    `Worth enough to be worth listing, but ${activeListingCount} sellers are competing — expect a slow sale.`,
+  PROFITABLE: ({ tier }) => {
+    switch (tier) {
+      case 'STRONG':
+        return 'Clears your profit threshold with little competing supply.';
+      case 'UNPROVEN':
+        return 'Clears your profit threshold, but nobody else is listing this — no way to gauge the market yet.';
+      default:
+        return 'Clears your profit threshold; competing supply is manageable.';
+    }
+  },
+};
+
+export function verdictReasonText(code: VerdictReasonCode, ctx: ReasonContext): string {
+  return REASON_TEXT[code](ctx);
+}
+
+/**
+ * Fixed precedence ladder (research R2). Order matters twice over: no-market-data
+ * must outrank any liquidity story, and the profit check must come before the
+ * gate so the gate only ever sees already-profitable items — which is what makes
+ * it structurally downgrade-only.
+ */
+function decideVerdict(args: {
+  sampleSize: number;
+  estimatedValueCents: number;
+  profitCents: number;
+  profitThresholdCents: number;
+  tier: LiquidityTier;
+  riskyMarginCents: number;
+}): { verdict: Verdict['verdict']; reasonCode: VerdictReasonCode } {
+  if (args.sampleSize === 0 || args.estimatedValueCents === 0) {
+    return { verdict: 'RIP', reasonCode: 'NO_MARKET_DATA' };
+  }
+  if (args.profitCents < args.profitThresholdCents) {
+    return { verdict: 'RIP', reasonCode: 'BELOW_THRESHOLD' };
+  }
+  if (args.tier === 'WEAK') {
+    return args.profitCents >= args.riskyMarginCents
+      ? { verdict: 'FLIP_RISKY', reasonCode: 'WEAK_LIQUIDITY_HIGH_VALUE' }
+      : { verdict: 'RIP', reasonCode: 'WEAK_LIQUIDITY_THIN_MARGIN' };
+  }
+  return { verdict: 'FLIP', reasonCode: 'PROFITABLE' };
+}
+
 export function computeVerdict(input: ValuationInput): Verdict {
   const feeRate = input.feeRate ?? DEFAULT_FEE_RATE;
-  const estimatedValueCents = estimateValueCents(input.samplePricesCents);
+  const liquidity = resolveLiquidityConfig(input.liquidity);
+  const realizationRate = input.realizationRate ?? REALIZATION_RATE_DEFAULT;
+  const rawAskingMedianCents = estimateValueCents(input.samplePricesCents);
+  const estimatedValueCents = applyRealizationRate(rawAskingMedianCents, realizationRate);
   const feesCents = Math.round(estimatedValueCents * feeRate);
   const profitCents =
     estimatedValueCents - feesCents - input.shippingEstimateCents - input.costBasisCents;
   const sampleSize = input.samplePricesCents.length;
+  const tier = liquidityTier(input.activeListingCount, liquidity);
+  const riskyMarginCents = Math.round(
+    input.profitThresholdCents * liquidity.riskyMarginMultiplier,
+  );
 
-  // No market sample at all means there is no evidence of a market: RIP.
-  const verdict =
-    estimatedValueCents > 0 && profitCents >= input.profitThresholdCents ? 'FLIP' : 'RIP';
+  const { verdict, reasonCode } = decideVerdict({
+    sampleSize,
+    estimatedValueCents,
+    profitCents,
+    profitThresholdCents: input.profitThresholdCents,
+    tier,
+    riskyMarginCents,
+  });
 
   return {
     verdict,
     estimatedValueCents,
+    rawAskingMedianCents,
+    realizationRate,
     feesCents,
     shippingEstimateCents: input.shippingEstimateCents,
     profitCents,
-    liquidityScore: supplySideLiquidity(input.activeListingCount),
+    liquidityScore: supplySideLiquidity(input.activeListingCount, liquidity.strongMaxListings),
+    liquidityTier: tier,
     liquidityBasis: 'SUPPLY_SIDE_ONLY',
+    reasonCode,
+    reason: verdictReasonText(reasonCode, {
+      activeListingCount: input.activeListingCount,
+      tier,
+    }),
     sampleSize,
     pricingBasis: input.pricingBasis,
     noMarketData: sampleSize === 0,

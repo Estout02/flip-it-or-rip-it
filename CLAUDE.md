@@ -18,11 +18,29 @@ The core valuation pipeline is real (spec `specs/001-valuation-pipeline/`): iden
 (UPC/ISBN/EAN incl. ISBN-10→13), eBay Browse API valuation (sandbox, OAuth app token, median of the
 10 lowest asking prices flagged `ASKING_PRICE`), flat shipping estimate, and the verdict math in
 `src/lib/verdict.ts` — orchestrated by `src/lib/pipeline.ts` behind a 24h in-memory valuation cache,
-a 50/day per-client cap, and a global daily eBay-call budget. Tests use a fake `EbayBrowseClient`;
+a 50/day per-client cap, and a global daily eBay-call budget.
+
+Valuation applies a **realization rate** (spec `specs/003-realization-rate/`): sellers list
+aspirationally, so the asking-price median is biased high and produced false FLIPs. The reported
+`estimatedValueCents` is now `round(median × VALUATION_REALIZATION_RATE)` — expected *sale* price,
+not asking price — with fees computed from it, `pricingBasis: ADJUSTED_ASKING_PRICE`, and both
+`rawAskingMedianCents` and `realizationRate` on the response so the figure is reconstructable.
+**The 0.8 default is a founder judgment call, not a measured figure**; the feature's real
+deliverable is that it stays retunable once user-reported sale outcomes exist to calibrate it.
+
+The verdict is **liquidity-gated** (spec `specs/002-liquidity-score/`) and therefore **three-way**:
+`FLIP` / `FLIP_RISKY` / `RIP`. Every result carries a `liquidityTier` (STRONG / MODERATE / WEAK /
+UNPROVEN) derived from active-listing count, plus a `reasonCode` and plain-language `reason`. A
+weak-tier (flooded-market) item that clears the profit threshold only thinly is downgraded to RIP;
+one with a comfortable margin (≥ 2× threshold by default) becomes FLIP_RISKY — worth listing, but
+expect a slow sale. The gate is downgrade-only, adds zero eBay calls, and lives entirely in the
+verdict step. Zero competing listings reads as UNPROVEN and never gates in either direction. Tests use a fake `EbayBrowseClient`;
 the only code that touches the real sandbox is the opt-in smoke script:
 `docker compose run --rm api npx tsx scripts/sandbox-smoke.ts`. New env vars (see `.env.example`):
 `EBAY_MARKETPLACE_ID`, `EBAY_FEE_RATE`, `SHIPPING_FLAT_CENTS`, `VALUATION_CACHE_TTL_HOURS`,
-`LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`. The phone frontend (likely iOS-first) comes later and
+`LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`, plus the liquidity knobs
+`LIQUIDITY_STRONG_MAX_LISTINGS`, `LIQUIDITY_MODERATE_MAX_LISTINGS`,
+`LIQUIDITY_RISKY_MARGIN_MULTIPLIER`, and `VALUATION_REALIZATION_RATE`. The phone frontend (likely iOS-first) comes later and
 will consume this API.
 
 ## Stack
@@ -45,6 +63,24 @@ docker compose run --rm api npm test        # run tests in the sandbox
 docker compose run --rm api npm run typecheck
 docker compose down              # stop; add -v to drop the Postgres volume
 ```
+
+Everything above runs against the eBay **sandbox** — `docker compose` reads `.env`, which stays on
+`EBAY_ENV=sandbox` deliberately, so nothing run without thinking can reach production. Production
+requires naming the overlay explicitly on each invocation:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up        # reads .env.production
+```
+
+The overlay uses `env_file: !override`, so `.env` is replaced rather than merged — there is no
+state where production env meets a sandbox credential. This is deliberately not an env-var switch
+(`ENV_FILE=...`): an exported shell variable would silently point every later command at
+production, and the whole point is that the choice stays visible at the call site.
+
+`.env.production` is gitignored and holds the production keyset. Note that
+`scripts/sandbox-smoke.ts` honors whatever environment it is given — run under the overlay it
+makes **real production calls** despite its name; it prints the active environment on its first
+line, so check that line before trusting a run.
 
 Source is volume-mounted with `tsx watch`, so edits hot-reload inside the container. Local
 `npm install` is only needed for editor IntelliSense.

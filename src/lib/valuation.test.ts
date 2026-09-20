@@ -31,7 +31,6 @@ describe('computeValuation', () => {
       100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
     ]);
     expect(valuation.sampleSize).toBe(10);
-    expect(valuation.estimatedValueCents).toBe(550); // median of 100..1000
     expect(valuation.activeListingCount).toBe(120);
   });
 
@@ -44,7 +43,7 @@ describe('computeValuation', () => {
     const valuation = await computeValuation(gtinQuery, client);
 
     expect(valuation.sampleSize).toBe(3);
-    expect(valuation.estimatedValueCents).toBe(2000);
+    expect(valuation.samplePricesCents).toHaveLength(3);
   });
 
   it('skips zero-price listings', async () => {
@@ -65,7 +64,6 @@ describe('computeValuation', () => {
     const valuation = await computeValuation(gtinQuery, client);
 
     expect(valuation.sampleSize).toBe(0);
-    expect(valuation.estimatedValueCents).toBe(0);
     expect(valuation.samplePricesCents).toEqual([]);
     expect(valuation.matchedTitle).toBeNull();
     expect(valuation.activeListingCount).toBe(0);
@@ -82,12 +80,12 @@ describe('computeValuation', () => {
     expect(valuation.matchedTitle).toBe('Chrono Trigger (SNES, 1995)');
   });
 
-  it('always flags ASKING_PRICE and stamps computedAt', async () => {
+  it('always flags ADJUSTED_ASKING_PRICE and stamps computedAt', async () => {
     const client = fakeClient({ listings: [listing(1000)], totalActive: 1 });
 
     const valuation = await computeValuation(gtinQuery, client);
 
-    expect(valuation.pricingBasis).toBe('ASKING_PRICE');
+    expect(valuation.pricingBasis).toBe('ADJUSTED_ASKING_PRICE');
     expect(Date.parse(valuation.computedAt)).not.toBeNaN();
   });
 });

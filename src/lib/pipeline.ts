@@ -6,7 +6,7 @@
 import { identify } from './identify.js';
 import { computeValuation, type Valuation } from './valuation.js';
 import { estimateShipping } from './shipping.js';
-import { computeVerdict, type Verdict } from './verdict.js';
+import { computeVerdict, type LiquidityConfig, type Verdict } from './verdict.js';
 import type { TtlCache } from './cache.js';
 import type { RateLimiter } from './rate-limit.js';
 import { EbayUnavailableError, type EbayBrowseClient } from './ebay/types.js';
@@ -33,6 +33,8 @@ export interface PipelineDeps {
     feeRate: number;
     shippingFlatCents: number;
     defaultProfitThresholdCents: number;
+    liquidity: LiquidityConfig;
+    realizationRate: number;
   };
 }
 
@@ -89,6 +91,8 @@ export async function lookup(
     profitThresholdCents:
       request.profitThresholdCents ?? deps.config.defaultProfitThresholdCents,
     feeRate: deps.config.feeRate,
+    liquidity: deps.config.liquidity,
+    realizationRate: deps.config.realizationRate,
   });
 
   return {
