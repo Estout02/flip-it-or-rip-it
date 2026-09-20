@@ -64,6 +64,24 @@ docker compose run --rm api npm run typecheck
 docker compose down              # stop; add -v to drop the Postgres volume
 ```
 
+Everything above runs against the eBay **sandbox** — `docker compose` reads `.env`, which stays on
+`EBAY_ENV=sandbox` deliberately, so nothing run without thinking can reach production. Production
+requires naming the overlay explicitly on each invocation:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up        # reads .env.production
+```
+
+The overlay uses `env_file: !override`, so `.env` is replaced rather than merged — there is no
+state where production env meets a sandbox credential. This is deliberately not an env-var switch
+(`ENV_FILE=...`): an exported shell variable would silently point every later command at
+production, and the whole point is that the choice stays visible at the call site.
+
+`.env.production` is gitignored and holds the production keyset. Note that
+`scripts/sandbox-smoke.ts` honors whatever environment it is given — run under the overlay it
+makes **real production calls** despite its name; it prints the active environment on its first
+line, so check that line before trusting a run.
+
 Source is volume-mounted with `tsx watch`, so edits hot-reload inside the container. Local
 `npm install` is only needed for editor IntelliSense.
 

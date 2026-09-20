@@ -1,0 +1,13 @@
+# Production eBay credentials overlay. NEVER the default — it only applies when
+# named explicitly on the command line:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+#
+# Deliberately not an env-var switch (e.g. ENV_FILE=...): an exported shell
+# variable would silently point every later command at production. Requiring the
+# file on each invocation keeps the choice visible at the call site.
+services:
+  api:
+    env_file: !override
+      - path: .env.production
+        required: true
