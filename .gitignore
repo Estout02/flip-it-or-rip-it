@@ -1,5 +1,7 @@
 node_modules/
-.env
+# Every local env file is secret except the committed template.
+.env*
+!.env.example
 dist/
 *.log
 .DS_Store
