@@ -14,3 +14,6 @@ because the original `tasks.md` has no Work Packages table.
 | 2026-09-26 13:31 | checkpoint-1 | — | started | orchestrator | |
 | 2026-09-26 13:34 | checkpoint-1 | — | done | user | Build it |
 | 2026-09-26 13:34 | implement | WP1, WP2 | started | sk-implementer ×2 | wave 1 |
+| 2026-09-26 13:40 | implement | WP1 | done | sk-implementer a070e3dc | api server.test 126/126, typecheck clean |
+| 2026-09-26 13:44 | implement | WP2 | done | sk-implementer aa782876 | web api+copy tests 27/27, typecheck clean |
+| 2026-09-26 13:44 | implement | WP3, WP4 | started | sk-implementer ×2 | wave 2 |

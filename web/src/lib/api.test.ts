@@ -87,4 +87,44 @@ describe('getMeta', () => {
     fetchMock.mockResolvedValue(jsonResponse({ nope: true }));
     expect(await getMeta()).toEqual(DEFAULT_META);
   });
+
+  it('reports ebayEnv sandbox (spec 007)', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ defaultProfitThresholdCents: 1000, lookupDailyCap: 50, marketplaceId: 'EBAY_US', ebayEnv: 'sandbox' }),
+    );
+    expect((await getMeta()).ebayEnv).toBe('sandbox');
+  });
+
+  it('reports ebayEnv production (spec 007)', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ defaultProfitThresholdCents: 1000, lookupDailyCap: 50, marketplaceId: 'EBAY_US', ebayEnv: 'production' }),
+    );
+    expect((await getMeta()).ebayEnv).toBe('production');
+  });
+
+  it('drops an unrecognized ebayEnv value (spec 007)', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ defaultProfitThresholdCents: 1000, lookupDailyCap: 50, marketplaceId: 'EBAY_US', ebayEnv: 'staging' }),
+    );
+    const result = await getMeta();
+    expect(result).toEqual({ defaultProfitThresholdCents: 1000, lookupDailyCap: 50, marketplaceId: 'EBAY_US' });
+    expect('ebayEnv' in result).toBe(false);
+  });
+
+  it('no ebayEnv key → absent (spec 007)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ defaultProfitThresholdCents: 1000, lookupDailyCap: 50, marketplaceId: 'EBAY_US' }));
+    const result = await getMeta();
+    expect('ebayEnv' in result).toBe(false);
+  });
+
+  it('DEFAULT_META has no ebayEnv (spec 007)', () => {
+    expect('ebayEnv' in DEFAULT_META).toBe(false);
+  });
+
+  it('falls back to defaults on failure, still no ebayEnv (spec 007)', async () => {
+    fetchMock.mockRejectedValue(new TypeError('offline'));
+    const result = await getMeta();
+    expect(result).toBe(DEFAULT_META);
+    expect('ebayEnv' in result).toBe(false);
+  });
 });

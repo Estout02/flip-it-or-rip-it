@@ -3,10 +3,15 @@ import { noMarket, risky, uncertain, flip } from '../test/fixtures';
 import {
   BASIS_NOTE,
   competitionPhrase,
+  isTestEnv,
   NO_MARKET_REASON,
   nextUtcMidnightLocal,
   reasonFor,
   recentProfitPhrase,
+  SANDBOX_NO_MARKET,
+  TEST_DATA_EXPLAIN,
+  TEST_DATA_LABEL,
+  TEST_DATA_WIDE,
   UNCERTAIN_REASON,
   VERDICT_COPY,
 } from './verdict-copy';
@@ -65,5 +70,26 @@ describe('nextUtcMidnightLocal', () => {
       new Date('2026-09-28T00:00:00Z'),
     );
     expect(nextUtcMidnightLocal(now)).toBe(expected);
+  });
+});
+
+describe('environment copy (spec 007)', () => {
+  it('the badge text assembles to the FR-002 sentence', () => {
+    expect(TEST_DATA_LABEL + TEST_DATA_WIDE + TEST_DATA_EXPLAIN).toBe(
+      "Test data — eBay sandbox. Results come from eBay's test environment, not real listings.",
+    );
+  });
+
+  it('sandbox no-market sentence', () => {
+    expect(SANDBOX_NO_MARKET).toBe(
+      "You're using eBay's test environment, which has very few listings. This item may well be for sale on real eBay.",
+    );
+  });
+
+  it('isTestEnv', () => {
+    expect(isTestEnv('sandbox')).toBe(true);
+    expect(isTestEnv('staging')).toBe(true);
+    expect(isTestEnv('production')).toBe(false);
+    expect(isTestEnv(undefined)).toBe(false);
   });
 });

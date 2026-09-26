@@ -30,18 +30,18 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
 
 **Purpose**: the API field, client types and parsing, shared copy, icon, and color tokens. No UI yet.
 
-- [ ] T001 [P] API tests in `src/server.test.ts`, inside `describe('GET /api/meta (spec 006, research R5)')`:
+- [X] T001 [P] API tests in `src/server.test.ts`, inside `describe('GET /api/meta (spec 006, research R5)')`:
   1. Update the existing test `'reports client-facing settings straight from config'`. Expect `res.headers['cache-control']` to be `'no-cache'` (was `'public, max-age=300'`) and `res.json()` to equal `{ defaultProfitThresholdCents: 1234, lookupDailyCap: 7, marketplaceId: 'EBAY_GB', ebayEnv: 'sandbox' }` (`testConfig.ebayEnv` is `'sandbox'`).
   2. Add the test `'reports the eBay environment (spec 007)'`: `makeApp({ config: { ebayEnv: 'production' } })`, GET `/api/meta` → status 200, `res.json().ebayEnv === 'production'`, and `res.headers['cache-control'] === 'no-cache'`.
-- [ ] T002 API implementation in `src/server.ts`, in the `app.get('/api/meta', …)` handler. Change `reply.header('Cache-Control', 'public, max-age=300')` to `reply.header('Cache-Control', 'no-cache')` and add `ebayEnv: config.ebayEnv,` as the last property of the returned object. Replace the comment above the route with: `// Local config only — zero eBay calls, so it carries no rate-limit hook and never touches the per-client lookup cap (research R5). no-cache (spec 007, plan D2): an operator switches eBay environments by restarting, and a cached response would show sandbox answers without the "Test data" badge.` Make no other change to `src/server.ts`. `contracts/meta-api.yaml` is already at 0.2.0 and needs no edit.
-- [ ] T003 [P] Client meta tests in `web/src/lib/api.test.ts`, in `describe('getMeta')`. Add these cases (each starts from a fresh cache, because the file's `beforeEach` already calls `resetMetaForTests()`):
+- [X] T002 API implementation in `src/server.ts`, in the `app.get('/api/meta', …)` handler. Change `reply.header('Cache-Control', 'public, max-age=300')` to `reply.header('Cache-Control', 'no-cache')` and add `ebayEnv: config.ebayEnv,` as the last property of the returned object. Replace the comment above the route with: `// Local config only — zero eBay calls, so it carries no rate-limit hook and never touches the per-client lookup cap (research R5). no-cache (spec 007, plan D2): an operator switches eBay environments by restarting, and a cached response would show sandbox answers without the "Test data" badge.` Make no other change to `src/server.ts`. `contracts/meta-api.yaml` is already at 0.2.0 and needs no edit.
+- [X] T003 [P] Client meta tests in `web/src/lib/api.test.ts`, in `describe('getMeta')`. Add these cases (each starts from a fresh cache, because the file's `beforeEach` already calls `resetMetaForTests()`):
   1. `fetchMock.mockResolvedValue(jsonResponse({ defaultProfitThresholdCents: 1000, lookupDailyCap: 50, marketplaceId: 'EBAY_US', ebayEnv: 'sandbox' }))` → `(await getMeta()).ebayEnv === 'sandbox'`
   2. The same with `ebayEnv: 'production'` → `'production'`
   3. The same with `ebayEnv: 'staging'` → the result `toEqual({ defaultProfitThresholdCents: 1000, lookupDailyCap: 50, marketplaceId: 'EBAY_US' })` and `'ebayEnv' in result === false`
   4. No `ebayEnv` key → `'ebayEnv' in result === false`
   5. `'ebayEnv' in DEFAULT_META === false`
   6. `fetchMock.mockRejectedValue(new TypeError('offline'))` → the result `toBe(DEFAULT_META)` and has no `ebayEnv`
-- [ ] T004 Client types and parsing (depends on T003). In `web/src/lib/types.ts`:
+- [X] T004 Client types and parsing (depends on T003). In `web/src/lib/types.ts`:
   - Add `export type EbayEnv = 'production' | 'sandbox';`.
   - Add `ebayEnv?: EbayEnv;` to `Meta` with the doc comment `/** Which eBay answers lookups (spec 007). Absent = unknown: the client shows no badge. */`.
   - Add `ebayEnv?: EbayEnv;` to `HistoryEntry` with the doc comment `/** Environment the result was checked in (spec 007). Absent on entries saved before 007 or while unknown. */`.
@@ -50,7 +50,7 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
   - Keep `isMeta` as is.
   - In `getMeta`, replace `return body;` with `return toMeta(body);`, where a new function is `function toMeta(m: Meta): Meta { const out: Meta = { defaultProfitThresholdCents: m.defaultProfitThresholdCents, lookupDailyCap: m.lookupDailyCap, marketplaceId: m.marketplaceId }; const env = (m as { ebayEnv?: unknown }).ebayEnv; if (env === 'production' || env === 'sandbox') out.ebayEnv = env; return out; }`.
   - Leave `DEFAULT_META` unchanged, with no `ebayEnv` (plan D1).
-- [ ] T005 [P] Copy in `web/src/lib/verdict-copy.ts` and `web/src/lib/verdict-copy.test.ts`:
+- [X] T005 [P] Copy in `web/src/lib/verdict-copy.ts` and `web/src/lib/verdict-copy.test.ts`:
   - Add `'flask'` to the `IconName` union.
   - Export the four constants from the "Shared constants" table above, verbatim, under the comment `// Spec 007: environment badge. Verbatim from specs/007-environment-badge/spec.md.`
   - Export `export function isTestEnv(env?: string): boolean { return env !== undefined && env !== 'production'; }`.
@@ -59,8 +59,8 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
   - `TEST_DATA_LABEL + TEST_DATA_WIDE + TEST_DATA_EXPLAIN` `toBe` `"Test data — eBay sandbox. Results come from eBay's test environment, not real listings."`
   - `SANDBOX_NO_MARKET` `toBe` the exact string from the table
   - `isTestEnv('sandbox') === true`, `isTestEnv('staging') === true`, `isTestEnv('production') === false`, `isTestEnv(undefined) === false`
-- [ ] T006 Flask icon in `web/src/components/Icon.tsx` (depends on T005, which adds `'flask'` to `IconName`). Add this entry to `PATHS`: `flask: <path d="M9 3h6M10 3v6L4.8 18.2A1.8 1.8 0 0 0 6.4 21h11.2a1.8 1.8 0 0 0 1.6-2.8L14 9V3M7.2 15h9.6" />,`. Change nothing else. The component already renders `aria-hidden="true"` and `stroke="currentColor"`.
-- [ ] T007 [P] Tokens in `web/src/styles/tokens.css` (plan D4):
+- [X] T006 Flask icon in `web/src/components/Icon.tsx` (depends on T005, which adds `'flask'` to `IconName`). Add this entry to `PATHS`: `flask: <path d="M9 3h6M10 3v6L4.8 18.2A1.8 1.8 0 0 0 6.4 21h11.2a1.8 1.8 0 0 0 1.6-2.8L14 9V3M7.2 15h9.6" />,`. Change nothing else. The component already renders `aria-hidden="true"` and `stroke="currentColor"`.
+- [X] T007 [P] Tokens in `web/src/styles/tokens.css` (plan D4):
   - In `:root`, after `--unc-tint`, add `--test-fg: #1e3a8a; --test-tint: #e4ecfb; --test-border: #3b5bcc;`.
   - In the `@media (prefers-color-scheme: dark)` `:root` block, after `--unc-tint`, add `--test-fg: #a9c1ff; --test-tint: #18223d; --test-border: #6f8fe8;`.
   - In the header comment, under "Additional pairs used by components", add these lines verbatim:
