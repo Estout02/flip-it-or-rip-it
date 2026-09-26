@@ -1,0 +1,47 @@
+openapi: 3.1.0
+info:
+  title: Flip It or Rip It — Client Meta API
+  version: 0.1.0
+  description: >
+    Configuration the web client needs to render honestly without hard-coding server
+    settings. Local config only — zero eBay calls, not counted against the per-client
+    lookup cap. The lookup endpoint itself is specified in
+    specs/005-backend-hardening/contracts/lookup-api.yaml (0.6.0), unchanged by 006.
+paths:
+  /api/meta:
+    get:
+      summary: Client-facing service settings
+      responses:
+        '200':
+          description: Current settings
+          headers:
+            Cache-Control:
+              schema: { type: string, const: 'public, max-age=300' }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [defaultProfitThresholdCents, lookupDailyCap, marketplaceId]
+                properties:
+                  defaultProfitThresholdCents:
+                    type: integer
+                    minimum: 0
+                    description: Threshold applied when a lookup omits profitThresholdCents.
+                  lookupDailyCap:
+                    type: integer
+                    minimum: 1
+                    description: Lookups per client address per UTC day.
+                  marketplaceId:
+                    type: string
+                    examples: [EBAY_US]
+              example: { defaultProfitThresholdCents: 1000, lookupDailyCap: 50, marketplaceId: EBAY_US }
+  /:
+    get:
+      summary: Web client (production only)
+      description: >
+        Served from WEB_DIST_DIR (default web/dist) only when a built index.html exists.
+        HTML carries the CSP from research R8 and Cache-Control no-cache; hashed assets
+        under /assets/ carry public, max-age=31536000, immutable.
+      responses:
+        '200': { description: index.html }
