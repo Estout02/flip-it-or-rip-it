@@ -180,14 +180,14 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
 
 **Independent test**: `ResultPanel.test.tsx` US2 cases.
 
-- [ ] T012 [P] [US2] Tests in `web/src/components/ResultPanel.test.tsx`, in a new `describe('sandbox no-market sentence (spec 007, US2)')`. Define `const SANDBOX_META = { ...DEFAULT_META, ebayEnv: 'sandbox' as const }` and `const PROD_META = { ...DEFAULT_META, ebayEnv: 'production' as const }`, and import `SANDBOX_NO_MARKET` from `../lib/verdict-copy`.
+- [X] T012 [P] [US2] Tests in `web/src/components/ResultPanel.test.tsx`, in a new `describe('sandbox no-market sentence (spec 007, US2)')`. Define `const SANDBOX_META = { ...DEFAULT_META, ebayEnv: 'sandbox' as const }` and `const PROD_META = { ...DEFAULT_META, ebayEnv: 'production' as const }`, and import `SANDBOX_NO_MARKET` from `../lib/verdict-copy`.
   1. `renderPanel(success(noMarket), { meta: SANDBOX_META })` → `screen.getByText(SANDBOX_NO_MARKET)` exists and is a `P` with class `sandbox-note`
   2. `renderPanel(success(noMarket), { meta: PROD_META })` → `screen.queryByText(SANDBOX_NO_MARKET) === null`
   3. `renderPanel(success(noMarket))` (DEFAULT_META, unknown) → null
   4. `renderPanel(success(flip), { meta: SANDBOX_META })` and `renderPanel(success(uncertain), { meta: SANDBOX_META })` → null (other verdicts never show it)
   5. History, sandbox entry under production meta: `renderPanel({ status: 'success', entry: { ...entryFor(noMarket), ebayEnv: 'sandbox' }, fromHistory: true }, { meta: PROD_META })` → present
   6. History, legacy entry under sandbox meta: `renderPanel({ status: 'success', entry: entryFor(noMarket), fromHistory: true }, { meta: SANDBOX_META })` → null
-- [ ] T013 [US2] Implementation in `web/src/components/ResultPanel.tsx` (depends on T012). In the `case 'success'` block, after `const savedAt = …`, add `const env = fromHistory ? entry.ebayEnv : meta.ebayEnv;` (plan D6). In the `isNoMarket(r)` branch, insert `{isTestEnv(env) && <p class="sandbox-note">{SANDBOX_NO_MARKET}</p>}` directly after `<VerdictBanner … />` and before `<BasisNote />`. Import `isTestEnv` and `SANDBOX_NO_MARKET` from `../lib/verdict-copy`. The paragraph needs no CSS.
+- [X] T013 [US2] Implementation in `web/src/components/ResultPanel.tsx` (depends on T012). In the `case 'success'` block, after `const savedAt = …`, add `const env = fromHistory ? entry.ebayEnv : meta.ebayEnv;` (plan D6). In the `isNoMarket(r)` branch, insert `{isTestEnv(env) && <p class="sandbox-note">{SANDBOX_NO_MARKET}</p>}` directly after `<VerdictBanner … />` and before `<BasisNote />`. Import `isTestEnv` and `SANDBOX_NO_MARKET` from `../lib/verdict-copy`. The paragraph needs no CSS.
 
 **Checkpoint**: a sandbox no-market result explains itself, and production is unchanged.
 
@@ -199,7 +199,7 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
 
 **Independent test**: `VerdictBanner`, `ResultPanel`, `use-lookup`, `RecentList` and `app.env.test.tsx` US3 cases.
 
-- [ ] T014 [US3] Env note in `web/src/components/VerdictBanner.tsx` and `web/src/components/VerdictBanner.test.tsx`.
+- [X] T014 [US3] Env note in `web/src/components/VerdictBanner.tsx` and `web/src/components/VerdictBanner.test.tsx`.
   - Add `testData?: boolean` to `Props`, with the doc comment `/** Spec 007: history result checked in a non-production environment. Only shown with savedAt. */`.
   - Add `const ENV_NOTE_ID = 'result-env-note';`.
   - Directly after the `savedAt` `<p id={SAVED_NOTE_ID}…>` element, render `{savedAt && testData && (<p id={ENV_NOTE_ID} class="env-note"><Icon name="flask" class="icon--chip" />{TEST_DATA_LABEL}{TEST_DATA_WIDE}</p>)}`.
@@ -209,7 +209,7 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
   1. `render(<VerdictBanner result={flip} savedAt="2026-09-26T19:42:00.000Z" testData />)` → `#result-env-note` has `textContent === 'Test data — eBay sandbox'`, and the heading's `aria-describedby === 'result-saved-note result-env-note'`
   2. `savedAt` without `testData` → no `#result-env-note`, and `aria-describedby === 'result-saved-note'`
   3. `testData` without `savedAt` → no `#result-env-note`, and no `aria-describedby` attribute
-- [ ] T015 [US3] Pass the flag from `web/src/components/ResultPanel.tsx`, with tests in `web/src/components/ResultPanel.test.tsx` (depends on T013 and T014). In the `case 'success'` block, add `const testData = fromHistory && isTestEnv(entry.ebayEnv);` and add `testData={testData}` to all three `<VerdictBanner …>` usages.
+- [X] T015 [US3] Pass the flag from `web/src/components/ResultPanel.tsx`, with tests in `web/src/components/ResultPanel.test.tsx` (depends on T013 and T014). In the `case 'success'` block, add `const testData = fromHistory && isTestEnv(entry.ebayEnv);` and add `testData={testData}` to all three `<VerdictBanner …>` usages.
 
   Tests (a new `describe('history env note (spec 007, US3)')`, reusing `SANDBOX_META` and `PROD_META` from T012):
   1. `{ status: 'success', entry: { ...entryFor(flip), ebayEnv: 'sandbox' }, fromHistory: true }` with `PROD_META` → `document.getElementById('result-env-note').textContent === 'Test data — eBay sandbox'`
@@ -290,9 +290,9 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
 
 ## Phase 6: Docs and close-out
 
-- [ ] T023 [P] `CLAUDE.md`, in the web client paragraph of "Current state". Directly after the sentence ending ``All UI copy comes verbatim from `specs/006-web-client/contracts/ui-states.md`.``, insert: ``Whenever `/api/meta` reports an `ebayEnv` other than `production`, the client shows a "Test data — eBay sandbox" badge in the header, adds a sparse-sandbox sentence to no-market results, and marks Recent entries checked in sandbox (spec `specs/007-environment-badge/`); `/api/meta` is served `no-cache` so an environment switch shows on the next page load.``
-- [ ] T024 [P] `specs/006-web-client/contracts/ui-states.md`, under `## Global`, append this bullet: ``- **Environment badge (spec 007)**: when `/api/meta` reports an `ebayEnv` other than `production`, the header shows a non-interactive "Test data" pill ("Test data — eBay sandbox" at ≥ 480 px; full text for assistive technology: "Test data — eBay sandbox. Results come from eBay's test environment, not real listings."). S6 then adds "You're using eBay's test environment, which has very few listings. This item may well be for sale on real eBay." Recent entries (name prefixed "Test data: ") and S12 results checked in sandbox carry a "Test data" marker. Unknown environment shows nothing. Details: `specs/007-environment-badge/`.``
-- [ ] T025 Mark T001–T025 `[X]` in `specs/007-environment-badge/tasks.md`
+- [X] T023 [P] `CLAUDE.md`, in the web client paragraph of "Current state". Directly after the sentence ending ``All UI copy comes verbatim from `specs/006-web-client/contracts/ui-states.md`.``, insert: ``Whenever `/api/meta` reports an `ebayEnv` other than `production`, the client shows a "Test data — eBay sandbox" badge in the header, adds a sparse-sandbox sentence to no-market results, and marks Recent entries checked in sandbox (spec `specs/007-environment-badge/`); `/api/meta` is served `no-cache` so an environment switch shows on the next page load.``
+- [X] T024 [P] `specs/006-web-client/contracts/ui-states.md`, under `## Global`, append this bullet: ``- **Environment badge (spec 007)**: when `/api/meta` reports an `ebayEnv` other than `production`, the header shows a non-interactive "Test data" pill ("Test data — eBay sandbox" at ≥ 480 px; full text for assistive technology: "Test data — eBay sandbox. Results come from eBay's test environment, not real listings."). S6 then adds "You're using eBay's test environment, which has very few listings. This item may well be for sale on real eBay." Recent entries (name prefixed "Test data: ") and S12 results checked in sandbox carry a "Test data" marker. Unknown environment shows nothing. Details: `specs/007-environment-badge/`.``
+- [X] T025 Mark T001–T025 `[X]` in `specs/007-environment-badge/tasks.md`
 
 ---
 

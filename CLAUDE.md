@@ -93,7 +93,7 @@ contrast-verified tokens in `web/src/styles/tokens.css`, semantic HTML, managed 
 announcements, and axe checks on every screen state in both the unit suite and the Playwright e2e
 matrix. The initial download is capped at **100 KB gzip** by `web/scripts/check-size.mjs`, which
 `npm test` runs after a build. All UI copy comes verbatim from
-`specs/006-web-client/contracts/ui-states.md`. Native apps may follow later on the same API.
+`specs/006-web-client/contracts/ui-states.md`. Whenever `/api/meta` reports an `ebayEnv` other than `production`, the client shows a "Test data — eBay sandbox" badge in the header, adds a sparse-sandbox sentence to no-market results, and marks Recent entries checked in sandbox (spec `specs/007-environment-badge/`); `/api/meta` is served `no-cache` so an environment switch shows on the next page load. Native apps may follow later on the same API.
 
 Spec `specs/005-backend-hardening/` closes gaps found after 004: the per-client daily cap now
 tracks the connecting socket address unless `TRUST_PROXY` is explicitly set (a hop count or a

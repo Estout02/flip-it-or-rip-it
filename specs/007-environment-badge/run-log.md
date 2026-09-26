@@ -24,3 +24,7 @@ because the original `tasks.md` has no Work Packages table.
 | 2026-09-26 14:05 | implement | WP6 | started | sk-implementer | wave 4 (e2e) |
 | 2026-09-26 14:14 | implement | WP6 | done | sk-implementer ae744577 | e2e env.spec 36/36 |
 | 2026-09-26 14:14 | implement | WP7 | started | sk-chore | wave 5 (haiku) |
+| 2026-09-26 14:40 | implement | WP7 | failed | sk-chore ab106768 | ran speckit-taskstoissues instead of WP7; opened issues #5–#7 (closed as not planned). Fix: dropped preload from sk-chore, guard now blocks gh |
+| 2026-09-26 14:41 | implement | WP7 | started | sk-chore (retry) | explicit instructions |
+| 2026-09-26 14:48 | implement | WP7 | done | sk-chore a1609fb7 | CLAUDE.md + ui-states.md updated; 25/25 tasks [X] |
+| 2026-09-26 14:48 | verify | — | started | sk-test-runner | full suites |

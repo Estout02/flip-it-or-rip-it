@@ -132,6 +132,7 @@ The reason sentence is the API `reason`, shown beneath the label, except where o
   Rip it" otherwise.
 - There are two visually hidden live regions (`role="status"` polite, `role="alert"` assertive),
   mounted at load and never re-created.
+- **Environment badge (spec 007)**: when `/api/meta` reports an `ebayEnv` other than `production`, the header shows a non-interactive "Test data" pill ("Test data — eBay sandbox" at ≥ 480 px; full text for assistive technology: "Test data — eBay sandbox. Results come from eBay's test environment, not real listings."). S6 then adds "You're using eBay's test environment, which has very few listings. This item may well be for sale on real eBay." Recent entries (name prefixed "Test data: ") and S12 results checked in sandbox carry a "Test data" marker. Unknown environment shows nothing. Details: `specs/007-environment-badge/`.
 
 ## Accessibility checks per state (tests)
 
