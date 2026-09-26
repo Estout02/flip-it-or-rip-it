@@ -96,7 +96,12 @@ The reason sentence is the API `reason`, shown beneath the label, except where o
 ### S13: Recent list
 - `h2` "Recent". Each entry is a `<button>` inside an `<li>`, with accessible name "{Verdict
   label}: {matchedTitle or query}, {profit phrase}, checked {time}". Visually: a verdict chip (icon
-  plus short label), a 1-line title, the profit, and the time.
+  plus short label), a 1-line title, the profit, and "· checked {time}". The word "checked" is
+  visible so the accessible name contains the visible text in order (WCAG 2.5.3 label-in-name,
+  a defect found by the 006 e2e pass).
+- When a result comes from history, the verdict heading is `aria-describedby` the S12 "Saved
+  result" note, because that note sits above the heading and would otherwise be skipped once
+  focus lands on it.
 - Empty: "Items you check will show up here."
 - **Clear history** is a text button, which opens a confirm `<dialog>` ("Clear all recent lookups
   on this device?" with **Clear** / **Cancel**, Cancel focused by default).
