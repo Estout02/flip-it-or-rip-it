@@ -35,3 +35,4 @@ because the original `tasks.md` has no Work Packages table.
 | 2026-09-26 15:14 | sync | — | skipped | — | done by WP7 (CLAUDE.md, ui-states, tasks [X]) |
 | 2026-09-26 15:14 | checkpoint-2 | — | started | orchestrator | |
 | 2026-09-26 15:20 | checkpoint-2 | — | done | user | Push and open PR |
+| 2026-09-26 15:22 | ship | — | done | orchestrator | https://github.com/Estout02/flip-it-or-rip-it/pull/8 |
