@@ -4,9 +4,11 @@
 import { screen, waitFor } from '@testing-library/preact';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HISTORY_KEY } from './lib/storage';
 import type { Meta } from './lib/types';
-import { mockApi, META, renderApp } from './test/app-harness';
-import { flip, jsonResponse } from './test/fixtures';
+import { SANDBOX_NO_MARKET } from './lib/verdict-copy';
+import { mockApi, META, renderApp, typeAndSubmit } from './test/app-harness';
+import { flip, jsonResponse, noMarket } from './test/fixtures';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -53,5 +55,33 @@ describe('environment badge (spec 007, US1)', () => {
     await waitFor(() => expect(document.querySelector('header .env-badge')).not.toBeNull());
     const results = await axe.run(document.body, { runOnly: { type: 'tag', values: TAGS } });
     expect(results.violations).toEqual([]);
+  });
+});
+
+describe('environment origin (spec 007, US2 + US3)', () => {
+  it('stamps a sandbox lookup with the environment, in the result and in Recent', async () => {
+    mockApi(() => jsonResponse(noMarket), SANDBOX);
+    const { input } = renderApp();
+    await waitFor(() => expect(document.querySelector('.env-badge')).not.toBeNull());
+
+    typeAndSubmit(input, '9780000000002');
+    await screen.findByText(SANDBOX_NO_MARKET);
+
+    expect(screen.getByRole('button', { name: /^Test data: Rip it: / })).toBeTruthy();
+    const stored = JSON.parse(localStorage.getItem(HISTORY_KEY)!) as { ebayEnv?: string }[];
+    expect(stored[0]!.ebayEnv).toBe('sandbox');
+  });
+
+  it('shows no sandbox note or chip under a production environment', async () => {
+    mockApi(() => jsonResponse(noMarket), PRODUCTION);
+    const { input } = renderApp();
+    await screen.findByText('$15.00');
+
+    typeAndSubmit(input, '9780000000002');
+    await screen.findByRole('heading', { level: 2, name: 'Rip it' });
+
+    expect(screen.queryByText(SANDBOX_NO_MARKET)).toBeNull();
+    expect(screen.getByRole('button', { name: /^Rip it: / })).toBeTruthy();
+    expect(document.querySelector('.chip--test')).toBeNull();
   });
 });

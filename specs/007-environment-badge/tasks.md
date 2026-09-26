@@ -216,7 +216,7 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
   2. The same entry with `fromHistory: false` and `SANDBOX_META` → no `#result-env-note` (live results rely on the header badge)
   3. `entryFor(flip)` (legacy) with `fromHistory: true` → none
   4. `{ ...entryFor(flip), ebayEnv: 'production' }` with `fromHistory: true` → none
-- [ ] T016 [P] [US3] Stamp the environment in `web/src/lib/use-lookup.ts` and `web/src/lib/use-lookup.test.tsx`.
+- [X] T016 [P] [US3] Stamp the environment in `web/src/lib/use-lookup.ts` and `web/src/lib/use-lookup.test.tsx`.
   - Change the signature to `export function useLookup(ebayEnv?: EbayEnv): UseLookup` (import `EbayEnv` from `./types`).
   - Add `const envRef = useRef(ebayEnv); envRef.current = ebayEnv;` next to the other refs. `submit` has `[]` deps, so it must read the ref at save time.
   - In the success handler, build the entry with `...(envRef.current !== undefined ? { ebayEnv: envRef.current } : {}),` after `result,`.
@@ -226,8 +226,8 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
   1. `renderHook(() => useLookup('sandbox'))`, `submit({ title: 'x' })`, `pending[0].resolve(jsonResponse(flip))` → the success entry has `ebayEnv === 'sandbox'`, and `loadHistory()[0].ebayEnv === 'sandbox'`
   2. `renderHook(() => useLookup())`, the same flow → `'ebayEnv' in entry === false`, and `'ebayEnv' in loadHistory()[0] === false`
   3. `renderHook(({ env }) => useLookup(env), { initialProps: { env: undefined as EbayEnv | undefined } })`, then `rerender({ env: 'production' })`, then submit and resolve → `entry.ebayEnv === 'production'`
-- [ ] T017 [US3] Wire it in `web/src/app.tsx` (depends on T010 and T016). Move the line `const [meta, setMeta] = useState<Meta>(DEFAULT_META);` above `const lookup = useLookup();`, and change the latter to `const lookup = useLookup(meta.ebayEnv);`. No other change.
-- [ ] T018 [P] [US3] Chip in `web/src/components/RecentList.tsx` and `web/src/components/RecentList.test.tsx`. In the `history.map` callback, add `const test = isTestEnv(e.ebayEnv);`.
+- [X] T017 [US3] Wire it in `web/src/app.tsx` (depends on T010 and T016). Move the line `const [meta, setMeta] = useState<Meta>(DEFAULT_META);` above `const lookup = useLookup();`, and change the latter to `const lookup = useLookup(meta.ebayEnv);`. No other change.
+- [X] T018 [P] [US3] Chip in `web/src/components/RecentList.tsx` and `web/src/components/RecentList.test.tsx`. In the `history.map` callback, add `const test = isTestEnv(e.ebayEnv);`.
   - Set the button's `aria-label` to `` `${test ? `${TEST_DATA_LABEL}: ` : ''}${copy.label}: ${title}, ${profit}, checked ${time}` ``.
   - As the **first** child of the button, before the verdict chip, render `{test && (<span class="chip chip--test"><Icon name="flask" class="icon--chip" />{TEST_DATA_LABEL}</span>)}`.
 
@@ -237,7 +237,7 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
   1. `[{ ...entryFor(flip, { id: 's', checkedAt: now.toISOString() }), ebayEnv: 'sandbox' as const }]` → `screen.getByRole('button', { name: \`Test data: Flip it: Chrono Trigger (Super Nintendo, 1995) — Cart Only, +$22.07 profit, checked ${formatCheckedAt(now.toISOString())}\` })` exists. Its `firstElementChild` has class `chip--test` and `textContent === 'Test data'`.
   2. `ebayEnv: 'production'` → no `.chip--test`, and the button's `aria-label` starts with `'Flip it: '`
   3. `entryFor(flip, { id: 'l', checkedAt: now.toISOString() })` (legacy) → no `.chip--test`, and the `aria-label` starts with `'Flip it: '`
-- [ ] T019 [US3] Integration tests appended to `web/src/app.env.test.tsx` (depends on T008, T013, T017 and T018), in `describe('environment origin (spec 007, US2 + US3)')`:
+- [X] T019 [US3] Integration tests appended to `web/src/app.env.test.tsx` (depends on T008, T013, T017 and T018), in `describe('environment origin (spec 007, US2 + US3)')`:
   1. `mockApi(() => jsonResponse(noMarket), SANDBOX)`, `const { input } = renderApp()`, `await waitFor(() => expect(document.querySelector('.env-badge')).not.toBeNull())` (meta resolved before the lookup), then `typeAndSubmit(input, '9780000000002')` and `await screen.findByText(SANDBOX_NO_MARKET)`. Then check:
      - `screen.getByRole('button', { name: /^Test data: Rip it: / })` exists.
      - `JSON.parse(localStorage.getItem(HISTORY_KEY)!)[0].ebayEnv === 'sandbox'` (import `HISTORY_KEY` from `./lib/storage`).

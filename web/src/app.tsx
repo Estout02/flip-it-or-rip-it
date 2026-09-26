@@ -23,9 +23,9 @@ function cameraCapable(): boolean {
 }
 
 export function App() {
-  const lookup = useLookup();
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   const [meta, setMeta] = useState<Meta>(DEFAULT_META);
+  const lookup = useLookup(meta.ebayEnv);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [ScannerView, setScannerView] = useState<FunctionComponent<ScannerProps> | null>(null);
