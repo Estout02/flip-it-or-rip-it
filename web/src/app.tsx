@@ -103,7 +103,7 @@ export function App() {
       <a class="skip-link" href="#lookup-input">
         Skip to lookup
       </a>
-      <Header onOpenSettings={openSettings} />
+      <Header onOpenSettings={openSettings} ebayEnv={meta.ebayEnv} />
       <main id="main" class="layout">
         <div class="col-lookup">
           <LookupForm

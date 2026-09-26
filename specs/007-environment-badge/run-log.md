@@ -17,3 +17,6 @@ because the original `tasks.md` has no Work Packages table.
 | 2026-09-26 13:40 | implement | WP1 | done | sk-implementer a070e3dc | api server.test 126/126, typecheck clean |
 | 2026-09-26 13:44 | implement | WP2 | done | sk-implementer aa782876 | web api+copy tests 27/27, typecheck clean |
 | 2026-09-26 13:44 | implement | WP3, WP4 | started | sk-implementer ×2 | wave 2 |
+| 2026-09-26 13:52 | implement | WP4 | done | sk-implementer a96645e8 | ResultPanel+VerdictBanner 33/33; typecheck red only in WP3-owned app.env.test.tsx (in progress) |
+| 2026-09-26 13:58 | implement | WP3 | done | sk-implementer af3df994 | EnvBadge+app+a11y 38/38, typecheck clean |
+| 2026-09-26 13:58 | implement | WP5 | started | sk-implementer | wave 3 |

@@ -1,11 +1,13 @@
 import type { Ref } from 'preact';
+import { EnvBadge } from './EnvBadge';
 import { Icon } from './Icon';
+import { isTestEnv } from '../lib/verdict-copy';
 
-type Props = { onOpenSettings(e: Event): void; settingsButtonRef?: Ref<HTMLButtonElement> };
+type Props = { onOpenSettings(e: Event): void; settingsButtonRef?: Ref<HTMLButtonElement>; ebayEnv?: string };
 
-export function Header({ onOpenSettings, settingsButtonRef }: Props) {
+export function Header({ onOpenSettings, settingsButtonRef, ebayEnv }: Props) {
   return (
-    <header class="app-header">
+    <header class={isTestEnv(ebayEnv) ? 'app-header app-header--badged' : 'app-header'}>
       <h1 class="wordmark">
         <svg class="wordmark__mark" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true" focusable="false">
           <defs>
@@ -18,8 +20,9 @@ export function Header({ onOpenSettings, settingsButtonRef }: Props) {
             <path class="wordmark__rip" d="M32 0v32H0z" />
           </g>
         </svg>
-        Flip it or Rip it
+        <span class="wordmark__text">Flip it or Rip it</span>
       </h1>
+      <EnvBadge env={ebayEnv} />
       <button
         type="button"
         class="btn btn--ghost header__settings"

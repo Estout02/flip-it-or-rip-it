@@ -78,7 +78,7 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
 
 **Independent test**: `src/app.env.test.tsx` US1 cases. With sandbox meta the badge renders in the header and axe is clean. With production meta or a failed meta request there is no badge.
 
-- [ ] T008 [US1] App-level tests.
+- [X] T008 [US1] App-level tests.
   - In `web/src/test/app-harness.tsx`, change `mockApi(handler: LookupHandler)` to `mockApi(handler: LookupHandler, meta: Meta | null = META)`: for `/api/meta` return `jsonResponse(meta)` when `meta !== null`, else `new Response('boom', { status: 500 })`. Keep the exported `META` unchanged (no `ebayEnv`), so every existing test stays "unknown".
   - Create `web/src/app.env.test.tsx` with `afterEach(() => vi.unstubAllGlobals())`, the constants `SANDBOX = { ...META, ebayEnv: 'sandbox' as const }` and `PRODUCTION = { ...META, defaultProfitThresholdCents: 1500, ebayEnv: 'production' as const }`, and `describe('environment badge (spec 007, US1)')`:
     1. `mockApi(() => jsonResponse(flip), SANDBOX)`, `renderApp()`, `await waitFor(() => expect(document.querySelector('header .env-badge')).not.toBeNull())`. Then check:
@@ -90,7 +90,7 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
     2. `mockApi(() => jsonResponse(flip), PRODUCTION)`, `renderApp()`, `await screen.findByText('$15.00')` (proves meta resolved), then `document.querySelector('.env-badge') === null` and the header has no `app-header--badged` class.
     3. `mockApi(() => jsonResponse(flip), null)`, `renderApp()`, `await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/meta'))`, `await new Promise((r) => setTimeout(r, 0))`, then `document.querySelector('.env-badge') === null`.
     4. axe: as case 1, then `axe.run(document.body, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] } })` → `violations` equals `[]` (the same pattern as `src/a11y.test.tsx`).
-- [ ] T009 [US1] Create `web/src/components/EnvBadge.tsx` and `web/src/components/EnvBadge.test.tsx`.
+- [X] T009 [US1] Create `web/src/components/EnvBadge.tsx` and `web/src/components/EnvBadge.test.tsx`.
 
   Component: `export function EnvBadge({ env }: { env?: string })` returns `null` unless `isTestEnv(env)`. Otherwise it returns exactly:
   `<p class="env-badge"><Icon name="flask" class="icon--chip" /><span>{TEST_DATA_LABEL}</span><span class="env-badge__wide">{TEST_DATA_WIDE}</span><span class="visually-hidden">{TEST_DATA_EXPLAIN}</span></p>`
@@ -102,14 +102,14 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
   3. `env="sandbox"` → `p.env-badge` exists, its `textContent` is the FR-002 string, and it has no `role`, `tabindex` or `aria-live` attribute. `.env-badge__wide` has `textContent === ' — eBay sandbox'`, and `svg` has `aria-hidden="true"`.
   4. `env="staging"` → `p.env-badge` exists
   5. axe on the sandbox render (the tag set from T008) → 0 violations
-- [ ] T010 [US1] Header wiring (depends on T009).
+- [X] T010 [US1] Header wiring (depends on T009).
   - In `web/src/components/Header.tsx`, add `ebayEnv?: string` to `Props`.
   - Set the header's `class` to `isTestEnv(ebayEnv) ? 'app-header app-header--badged' : 'app-header'`.
   - Wrap the wordmark's text node in `<span class="wordmark__text">Flip it or Rip it</span>`, keeping it inside the `h1` after the svg.
   - Render `<EnvBadge env={ebayEnv} />` between `</h1>` and the Settings `<button>`.
 
   In `web/src/app.tsx`, change `<Header onOpenSettings={openSettings} />` to `<Header onOpenSettings={openSettings} ebayEnv={meta.ebayEnv} />`. Make no other app.tsx change in this task.
-- [ ] T011 [US1] Styles in `web/src/styles/app.css`. This file holds **all** 007 CSS, including the classes WP4 and WP5 use. Add a section after the `/* ---------- Header ---------- */` block:
+- [X] T011 [US1] Styles in `web/src/styles/app.css`. This file holds **all** 007 CSS, including the classes WP4 and WP5 use. Add a section after the `/* ---------- Header ---------- */` block:
   ```css
   /* ---------- Environment badge (spec 007, plan D3/D4) ---------- */
   .env-badge,

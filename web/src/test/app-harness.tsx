@@ -11,11 +11,11 @@ export const META: Meta = { defaultProfitThresholdCents: 1000, lookupDailyCap: 5
 
 export type LookupHandler = (body: Record<string, unknown>) => Response | Promise<Response>;
 
-export function mockApi(handler: LookupHandler) {
+export function mockApi(handler: LookupHandler, meta: Meta | null = META) {
   const lookups: Record<string, unknown>[] = [];
   const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url);
-    if (path === '/api/meta') return jsonResponse(META);
+    if (path === '/api/meta') return meta !== null ? jsonResponse(meta) : new Response('boom', { status: 500 });
     if (path === '/api/lookup') {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       lookups.push(body);
