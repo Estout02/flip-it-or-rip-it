@@ -12,6 +12,11 @@ export { flip, noMarket, rip, risky, uncertain };
 /** A cap deliberately different from the client default (50), to prove S8 reads /api/meta. */
 export const META: Meta = { defaultProfitThresholdCents: 1000, lookupDailyCap: 75, marketplaceId: 'EBAY_US' };
 
+/** Spec 007: environment badge. META has no ebayEnv, so existing specs keep running with an unknown environment. */
+export const SANDBOX_META: Meta = { ...META, ebayEnv: 'sandbox' };
+export const PRODUCTION_META: Meta = { ...META, defaultProfitThresholdCents: 1500, ebayEnv: 'production' };
+export const BADGE_TEXT = "Test data — eBay sandbox. Results come from eBay's test environment, not real listings.";
+
 /** Query → canned verdict. Each fixture's own query is what the test types. */
 export const QUERIES = {
   flip: { query: 'Chrono Trigger SNES', result: flip },
@@ -55,11 +60,19 @@ export type ApiMock = { lookups(): number; bodies: LookupBody[] };
  * Intercepts every /api/** request. /api/meta returns META; /api/lookup goes to `handler`.
  * Works on a Page or a BrowserContext (the context level also sees service-worker fetches).
  */
-export async function mockApi(target: Page | BrowserContext, handler: Handler = byQuery, meta: Meta = META): Promise<ApiMock> {
+export async function mockApi(
+  target: Page | BrowserContext,
+  handler: Handler = byQuery,
+  meta: Meta = META,
+  metaDelayMs = 0,
+): Promise<ApiMock> {
   const bodies: LookupBody[] = [];
   await target.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === '/api/meta') return route.fulfill({ json: meta });
+    if (url.pathname === '/api/meta') {
+      if (metaDelayMs) await new Promise((r) => setTimeout(r, metaDelayMs));
+      return route.fulfill({ json: meta });
+    }
     if (url.pathname === '/api/lookup' && route.request().method() === 'POST') {
       const body = (route.request().postDataJSON() ?? {}) as LookupBody;
       bodies.push(body);

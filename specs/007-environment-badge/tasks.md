@@ -252,12 +252,12 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
 
 ## Phase 5: End-to-end, accessibility and layout (Playwright)
 
-- [ ] T020 E2E fixtures in `web/e2e/fixtures.ts`.
+- [X] T020 E2E fixtures in `web/e2e/fixtures.ts`.
   - Change the signature to `mockApi(target, handler = byQuery, meta: Meta = META, metaDelayMs = 0)`. In the `/api/meta` branch, `if (metaDelayMs) await new Promise((r) => setTimeout(r, metaDelayMs));` before `route.fulfill({ json: meta })`.
   - Export `SANDBOX_META: Meta = { ...META, ebayEnv: 'sandbox' }` and `PRODUCTION_META: Meta = { ...META, defaultProfitThresholdCents: 1500, ebayEnv: 'production' }`.
   - Export `BADGE_TEXT = "Test data — eBay sandbox. Results come from eBay's test environment, not real listings."`.
   - Leave `META` unchanged (no `ebayEnv`), so every existing spec keeps running with an unknown environment.
-- [ ] T021 Header cases in a new `web/e2e/env.spec.ts` (depends on T020), wrapped in `for (const colorScheme of THEMES) { test.describe(\`env badge (${colorScheme})\`, () => { test.use({ colorScheme }); … }) }` so it runs for all three projects in both schemes. Let `w = page.viewportSize()!.width`.
+- [X] T021 Header cases in a new `web/e2e/env.spec.ts` (depends on T020), wrapped in `for (const colorScheme of THEMES) { test.describe(\`env badge (${colorScheme})\`, () => { test.use({ colorScheme }); … }) }` so it runs for all three projects in both schemes. Let `w = page.viewportSize()!.width`.
   - (a) Sandbox: `mockApi(page, byQuery, SANDBOX_META)`, `gotoApp(page)`. Then check:
     - `page.locator('header .env-badge')` is visible, `toBeInViewport()`, and `toHaveText(BADGE_TEXT)`.
     - If `w < 480`, `.env-badge__wide`'s `boundingBox().width <= 1`, else `> 1`.
@@ -273,7 +273,7 @@ Fixture facts used by the tests below (from `web/src/test/fixtures.ts`, verified
     2. `await expect(page.locator('.env-badge')).toBeVisible()`.
     3. Re-measure, and assert `inputAfter.y` and `inputAfter.x` are `toBeCloseTo` the before values, and `headerAfter.height` is `toBeCloseTo(headerBefore.height, 0)`.
     4. `expect(input(page)).toBeFocused()` and `toHaveValue('Chrono')`.
-- [ ] T022 Result and history cases in `web/e2e/env.spec.ts` (depends on T021; same file, same `THEMES` loop):
+- [X] T022 Result and history cases in `web/e2e/env.spec.ts` (depends on T021; same file, same `THEMES` loop):
   - (c) Sandbox no-market: `mockApi(page, byQuery, SANDBOX_META)`, `gotoApp`, `await expect(page.locator('.env-badge')).toBeVisible()`, `lookupFixture(page, 'noMarket')`. Then check:
     - `page.getByText("You're using eBay's test environment, which has very few listings. This item may well be for sale on real eBay.")` is visible.
     - `expectStateAccessible(page, \`S6 sandbox / ${colorScheme}\`)`.

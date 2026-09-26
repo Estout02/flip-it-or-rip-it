@@ -22,3 +22,5 @@ because the original `tasks.md` has no Work Packages table.
 | 2026-09-26 13:58 | implement | WP5 | started | sk-implementer | wave 3 |
 | 2026-09-26 14:05 | implement | WP5 | done | sk-implementer af406164 | use-lookup+RecentList+app 39/39, typecheck clean; test-only deviation (jsdom dialog role query) |
 | 2026-09-26 14:05 | implement | WP6 | started | sk-implementer | wave 4 (e2e) |
+| 2026-09-26 14:14 | implement | WP6 | done | sk-implementer ae744577 | e2e env.spec 36/36 |
+| 2026-09-26 14:14 | implement | WP7 | started | sk-chore | wave 5 (haiku) |
