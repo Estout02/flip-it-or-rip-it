@@ -7,8 +7,10 @@ import {
   EMPTY_HEADING,
   ERROR_COPY,
   isNoMarket,
+  isTestEnv,
   nextUtcMidnightLocal,
   ROUGH_FIGURES_SUMMARY,
+  SANDBOX_NO_MARKET,
   UNCERTAIN_SUGGEST_DETAILS,
   UNCERTAIN_SUGGEST_SCAN,
   VERDICT_COPY,
@@ -78,6 +80,8 @@ export function ResultPanel({ shown, meta, onCheckAnother, onTryTitle, onRetry, 
       const { entry, fromHistory } = shown;
       const r = entry.result;
       const savedAt = fromHistory ? entry.checkedAt : undefined;
+      const env = fromHistory ? entry.ebayEnv : meta.ebayEnv;
+      const testData = fromHistory && isTestEnv(entry.ebayEnv);
       const checkAnother = (
         <button type="button" class="btn btn--primary" onClick={onCheckAnother}>
           Check another
@@ -87,7 +91,8 @@ export function ResultPanel({ shown, meta, onCheckAnother, onTryTitle, onRetry, 
       if (isNoMarket(r)) {
         inner = (
           <>
-            <VerdictBanner result={r} headingRef={headingRef} savedAt={savedAt} />
+            <VerdictBanner result={r} headingRef={headingRef} savedAt={savedAt} testData={testData} />
+            {isTestEnv(env) && <p class="sandbox-note">{SANDBOX_NO_MARKET}</p>}
             <BasisNote />
             <div class="actions">
               {checkAnother}
@@ -102,7 +107,7 @@ export function ResultPanel({ shown, meta, onCheckAnother, onTryTitle, onRetry, 
       } else if (r.verdict === 'UNCERTAIN') {
         inner = (
           <>
-            <VerdictBanner result={r} headingRef={headingRef} savedAt={savedAt} />
+            <VerdictBanner result={r} headingRef={headingRef} savedAt={savedAt} testData={testData} />
             <ul class="suggestions" role="list">
               <li>
                 {onScan ? (
@@ -136,7 +141,7 @@ export function ResultPanel({ shown, meta, onCheckAnother, onTryTitle, onRetry, 
       } else {
         inner = (
           <>
-            <VerdictBanner result={r} headingRef={headingRef} savedAt={savedAt} />
+            <VerdictBanner result={r} headingRef={headingRef} savedAt={savedAt} testData={testData} />
             <MoneyBreakdown result={r} costBasisCents={entry.costBasisCents} />
             <MatchDetails result={r} />
             <BasisNote />

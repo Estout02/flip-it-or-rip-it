@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_META } from '../lib/api';
+import { SANDBOX_NO_MARKET } from '../lib/verdict-copy';
 import type { LookupState } from '../lib/types';
 import { entryFor, flip, noMarket, rip, risky, uncertain } from '../test/fixtures';
 import { ResultPanel } from './ResultPanel';
@@ -117,5 +118,82 @@ describe('ResultPanel', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(document.activeElement).toBe(input);
     input.remove();
+  });
+
+  describe('sandbox no-market sentence (spec 007, US2)', () => {
+    const SANDBOX_META = { ...DEFAULT_META, ebayEnv: 'sandbox' as const };
+    const PROD_META = { ...DEFAULT_META, ebayEnv: 'production' as const };
+
+    it('sandbox meta: sentence shown as a sandbox-note paragraph', () => {
+      renderPanel(success(noMarket), { meta: SANDBOX_META });
+      const p = screen.getByText(SANDBOX_NO_MARKET);
+      expect(p.tagName).toBe('P');
+      expect(p.classList.contains('sandbox-note')).toBe(true);
+    });
+
+    it('production meta: no sentence', () => {
+      renderPanel(success(noMarket), { meta: PROD_META });
+      expect(screen.queryByText(SANDBOX_NO_MARKET)).toBeNull();
+    });
+
+    it('unknown meta (default): no sentence', () => {
+      renderPanel(success(noMarket));
+      expect(screen.queryByText(SANDBOX_NO_MARKET)).toBeNull();
+    });
+
+    it('other verdicts never show it, even in sandbox', () => {
+      renderPanel(success(flip), { meta: SANDBOX_META });
+      expect(screen.queryByText(SANDBOX_NO_MARKET)).toBeNull();
+      renderPanel(success(uncertain), { meta: SANDBOX_META });
+      expect(screen.queryByText(SANDBOX_NO_MARKET)).toBeNull();
+    });
+
+    it('history entry checked in sandbox, viewed under production meta: shown', () => {
+      renderPanel(
+        { status: 'success', entry: { ...entryFor(noMarket), ebayEnv: 'sandbox' }, fromHistory: true },
+        { meta: PROD_META },
+      );
+      expect(screen.getByText(SANDBOX_NO_MARKET)).toBeTruthy();
+    });
+
+    it('legacy history entry (no ebayEnv), viewed under sandbox meta: not shown', () => {
+      renderPanel({ status: 'success', entry: entryFor(noMarket), fromHistory: true }, { meta: SANDBOX_META });
+      expect(screen.queryByText(SANDBOX_NO_MARKET)).toBeNull();
+    });
+  });
+
+  describe('history env note (spec 007, US3)', () => {
+    const SANDBOX_META = { ...DEFAULT_META, ebayEnv: 'sandbox' as const };
+    const PROD_META = { ...DEFAULT_META, ebayEnv: 'production' as const };
+
+    it('history entry checked in sandbox, viewed under production meta: env note shown', () => {
+      renderPanel(
+        { status: 'success', entry: { ...entryFor(flip), ebayEnv: 'sandbox' }, fromHistory: true },
+        { meta: PROD_META },
+      );
+      expect(document.getElementById('result-env-note')!.textContent).toBe('Test data — eBay sandbox');
+    });
+
+    it('same entry live (not from history): no env note', () => {
+      renderPanel(
+        { status: 'success', entry: { ...entryFor(flip), ebayEnv: 'sandbox' }, fromHistory: false },
+        { meta: SANDBOX_META },
+      );
+      expect(document.getElementById('result-env-note')).toBeNull();
+    });
+
+    it('legacy history entry (no ebayEnv): no env note', () => {
+      renderPanel({ status: 'success', entry: entryFor(flip), fromHistory: true });
+      expect(document.getElementById('result-env-note')).toBeNull();
+    });
+
+    it('history entry checked in production: no env note', () => {
+      renderPanel({
+        status: 'success',
+        entry: { ...entryFor(flip), ebayEnv: 'production' },
+        fromHistory: true,
+      });
+      expect(document.getElementById('result-env-note')).toBeNull();
+    });
   });
 });
