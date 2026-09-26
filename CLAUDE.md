@@ -12,6 +12,31 @@ features ad hoc. The flow: `/speckit-constitution` → `/speckit-specify` → `/
 `/speckit-analyze` before implement). Templates and the project constitution live in `.specify/`;
 specs land in `specs/`. Founder decisions recorded in `docs/PROJECT_BRIEF.md` feed the specs.
 
+**Default entry point: `/speckit-orchestrate "<feature>"`** (`.claude/skills/speckit-orchestrate/`).
+It runs the whole flow through tiered subagents in `.claude/agents/sk-*.md`:
+
+- **Opus plans** (`sk-spec-author`, `sk-planner` at effort xhigh, `sk-tasker`, and the read-only
+  `sk-analyst` and `sk-reviewer`).
+- **Sonnet builds** (`sk-implementer`, one per Work Package; `sk-converger`).
+- **Haiku runs chores** (`sk-test-runner`, `sk-chore`).
+
+It stops for the user only twice. **Checkpoint 1** comes after spec, plan, tasks and analyze
+(clarify questions are asked there too). **Checkpoint 2** comes after verified tests, before
+push/PR.
+
+`sk-tasker` appends a `## Work Packages` table (disjoint file ownership, dependency waves, tier,
+verify command) that the orchestrator dispatches from. Only the orchestrator commits (one commit per
+package), pushes, or edits the constitution. Every `sk-*` agent runs behind
+`.claude/hooks/guard-subagent-bash.sh`, which blocks:
+- git writes;
+- starting or stopping the stack;
+- the production overlay;
+- host npm.
+
+Progress is logged in `specs/NNN/run-log.md`. After an interruption (e.g. a usage limit), run
+`/speckit-orchestrate --resume`; to enter mid-flow on an already planned spec, run
+`--from <phase> <spec-dir>`. The individual `/speckit-*` commands still work for manual use.
+
 ## Current state
 
 The core valuation pipeline is real (spec `specs/001-valuation-pipeline/`): identifier resolution
