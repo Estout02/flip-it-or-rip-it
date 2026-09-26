@@ -55,8 +55,20 @@ the only code that touches the real sandbox is the opt-in smoke script:
 `LIQUIDITY_STRONG_MAX_LISTINGS`, `LIQUIDITY_MODERATE_MAX_LISTINGS`,
 `LIQUIDITY_RISKY_MARGIN_MULTIPLIER`, `VALUATION_REALIZATION_RATE`, and the match thresholds
 `MATCH_MIN_DOMINANCE_HIGH`, `MATCH_MIN_DOMINANCE_MEDIUM`, `MATCH_MAX_DISPERSION_HIGH`,
-`MATCH_MAX_DISPERSION_MEDIUM`. The phone frontend (likely iOS-first) comes later and
-will consume this API.
+`MATCH_MAX_DISPERSION_MEDIUM`.
+
+The **web client** (spec `specs/006-web-client/`) is the product's face: a mobile-first,
+installable web app in its own package, `web/` (Preact + TypeScript + Vite, hand-written CSS, no
+web fonts or icon libraries), served same-origin by the API in production. One screen: scan or type
+→ verdict, reason and figures → next item. The camera scanner (native `BarcodeDetector`, else the
+`barcode-detector` ZXing-WASM ponyfill with the `.wasm` self-hosted — never a CDN) is lazy-loaded on
+the first Scan tap and never costs the typing path. Settings (minimum profit) and the last 50
+results live only in the device's `localStorage`. It must meet **WCAG 2.2 AA** (constitution VIII):
+contrast-verified tokens in `web/src/styles/tokens.css`, semantic HTML, managed focus, live-region
+announcements, and axe checks on every screen state in both the unit suite and the Playwright e2e
+matrix. The initial download is capped at **100 KB gzip** by `web/scripts/check-size.mjs`, which
+`npm test` runs after a build. All UI copy comes verbatim from
+`specs/006-web-client/contracts/ui-states.md`. Native apps may follow later on the same API.
 
 Spec `specs/005-backend-hardening/` closes gaps found after 004: the per-client daily cap now
 tracks the connecting socket address unless `TRUST_PROXY` is explicitly set (a hop count or a
@@ -80,7 +92,10 @@ per UTC day rather than growing forever.
 - **API**: Node 24 + TypeScript + Fastify (`src/server.ts`), chosen for speed — lookup latency is
   the product's #1 requirement.
 - **DB**: Postgres 17 (compose service `db`); no schema yet — saved-item inventory comes post-MVP.
-- **Tests**: Vitest.
+- **Web client**: `web/` — Preact + TypeScript + Vite, its own `package.json` (its deps never
+  enter the API image). `vite-plugin-pwa` for the offline shell and install; no runtime deps
+  beyond `preact` and the lazily imported `barcode-detector`.
+- **Tests**: Vitest (API; web units + axe in jsdom); Playwright + `@axe-core/playwright` (web e2e).
 - **Sandbox**: everything runs in Docker. The containers exist specifically as a *safe environment
   for AI-driven development and testing* — run code, tests, and experiments inside them, not on the
   host.
@@ -90,11 +105,19 @@ per UTC day rather than growing forever.
 All development and testing happens in Docker:
 
 ```bash
-docker compose up --build        # API on http://localhost:3000, Postgres on 5432
+docker compose up --build        # API :3000, web client (Vite dev) :5173, Postgres :5432
 docker compose run --rm api npm test        # run tests in the sandbox
 docker compose run --rm api npm run typecheck
+docker compose run --rm web npm test        # web: vitest (jsdom + axe) + build + 100 KB budget
+docker compose run --rm web npm run typecheck
+docker compose --profile e2e run --rm e2e   # web: Playwright e2e + accessibility matrix (API mocked)
+docker compose run --rm web npm run build   # → web/dist, served by the API in production
 docker compose down              # stop; add -v to drop the Postgres volume
 ```
+
+The `web` service mounts `./web` with an anonymous `node_modules` volume, so after changing web
+dependencies run `docker compose build web`. The root `.dockerignore` excludes `web/node_modules`
+and `web/dist` from the API image context.
 
 Everything above runs against the eBay **sandbox** — `docker compose` reads `.env`, which stays on
 `EBAY_ENV=sandbox` deliberately, so nothing run without thinking can reach production. Production
