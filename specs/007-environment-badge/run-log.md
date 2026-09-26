@@ -1,0 +1,16 @@
+# Run log: 007-environment-badge
+
+Orchestrated by `/speckit-orchestrate --from tasks specs/007-environment-badge`.
+Spec and plan were written by hand before the orchestrator existed. The run starts at tasks
+because the original `tasks.md` has no Work Packages table.
+
+| Time | Phase | Item | Status | Agent | Evidence |
+|---|---|---|---|---|---|
+| 2026-09-26 13:15 | preflight | — | done | orchestrator | tree clean · base = origin/main · docker pull ok |
+| 2026-09-26 13:15 | tasks | — | started | sk-tasker | regenerate tasks.md + Work Packages |
+| 2026-09-26 13:24 | tasks | — | done | sk-tasker acbfd49e | 25 tasks, 7 WPs, 5 waves, track M |
+| 2026-09-26 13:24 | analyze | — | started | sk-analyst | |
+| 2026-09-26 13:31 | analyze | — | done | sk-analyst a9deec80 | clean: 0 CRIT · 0 HIGH · 5 MED · 3 LOW |
+| 2026-09-26 13:31 | checkpoint-1 | — | started | orchestrator | |
+| 2026-09-26 13:34 | checkpoint-1 | — | done | user | Build it |
+| 2026-09-26 13:34 | implement | WP1, WP2 | started | sk-implementer ×2 | wave 1 |
