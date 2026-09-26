@@ -1,0 +1,130 @@
+/*
+ * Design tokens — specs/006-web-client/data-model.md "Design tokens", verbatim.
+ *
+ * WCAG 2.x contrast ratios, verified with the relative-luminance formula (light / dark).
+ * Minimums: 4.5:1 text, 3:1 UI components and focus indicators.
+ *
+ *   --text on --bg                 16.41 / 16.26     --text on --surface         17.61 / 14.91
+ *   --text-muted on --bg            6.39 /  8.42     --text-muted on --surface    6.86 /  7.72
+ *   --border-ui on --bg (UI)        3.57 /  4.09     --border-ui on --surface     3.83 /  3.75
+ *   --focus on --bg (UI)            6.24 /  9.13     --focus on --surface         6.70 /  8.36
+ *   --danger on --bg                6.13 /  8.32     --danger on --surface        6.57 /  7.63
+ *   --btn-fg on --btn-bg           17.61 / 16.26
+ *   --flip-fg on --flip-tint        5.82 /  8.48     --text on --flip-tint       15.33 / 13.11
+ *   --risky-fg on --risky-tint      6.21 /  8.88     --text on --risky-tint      15.54 / 13.40
+ *   --rip-fg on --rip-tint          6.95 /  8.02     --text on --rip-tint        14.83 / 14.04
+ *   --unc-fg on --unc-tint          7.34 /  9.12     --text on --unc-tint        15.15 / 12.83
+ *
+ * Additional pairs used by components (same script):
+ *   --text-muted on each tint      ≥ 5.77 / ≥ 6.64   (history note inside the verdict band)
+ *   --focus on each tint           ≥ 5.64 / ≥ 7.20   (focus ring inside the verdict band)
+ *   verdict --*-fg on --surface    ≥ 6.69 / ≥ 8.51   (verdict icon/label outside the band)
+ *
+ * --border-subtle is decorative only and never carries meaning.
+ */
+:root {
+  color-scheme: light dark;
+
+  --bg: #f7f7f4;
+  --surface: #ffffff;
+  --text: #17191c;
+  --text-muted: #555b63;
+  --border-ui: #7c838c;
+  --border-subtle: #e3e5e1;
+  --focus: #1d4ed8;
+  --danger: #b42318;
+  --btn-bg: #17191c;
+  --btn-fg: #ffffff;
+
+  --flip-fg: #0a6a3b;
+  --flip-tint: #e3f3ea;
+  --risky-fg: #8a4700;
+  --risky-tint: #fdefd9;
+  --rip-fg: #5335b5;
+  --rip-tint: #eee9fb;
+  --unc-fg: #474d55;
+  --unc-tint: #eceef1;
+
+  --shadow: 0 1px 2px rgb(23 25 28 / 0.06), 0 4px 16px rgb(23 25 28 / 0.06);
+
+  /* 4 px spacing scale */
+  --space-1: 0.25rem; /*  4px */
+  --space-2: 0.5rem; /*  8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /* 16px */
+  --space-5: 1.5rem; /* 24px */
+  --space-6: 2rem; /* 32px */
+  --space-7: 2.5rem; /* 40px */
+  --space-8: 3rem; /* 48px */
+
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --target: 44px;
+
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --step--1: clamp(0.875rem, 0.85rem + 0.1vw, 0.9375rem);
+  --step-0: clamp(1rem, 0.96rem + 0.2vw, 1.125rem);
+  --step-1: clamp(1.125rem, 1.07rem + 0.3vw, 1.3125rem);
+  --step-2: clamp(1.3125rem, 1.2rem + 0.55vw, 1.625rem);
+  --step-3: clamp(1.625rem, 1.45rem + 0.9vw, 2.125rem);
+  --step-4: clamp(2.25rem, 1.8rem + 2.2vw, 3rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1012;
+    --surface: #171a1d;
+    --text: #ecedee;
+    --text-muted: #a7adb4;
+    --border-ui: #6e757d;
+    --border-subtle: #2a2e33;
+    --focus: #8ab4ff;
+    --danger: #ff8a7a;
+    --btn-bg: #ecedee;
+    --btn-fg: #0e1012;
+
+    --flip-fg: #5fd69c;
+    --flip-tint: #0e2a1c;
+    --risky-fg: #f4b860;
+    --risky-tint: #2d2110;
+    --rip-fg: #bba9ff;
+    --rip-tint: #211a3b;
+    --unc-fg: #c5cad0;
+    --unc-tint: #23272b;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+}
+
+/* Forced colors: the text label and icon carry meaning; borders make bands and buttons visible. */
+@media (forced-colors: active) {
+  .verdict,
+  .chip,
+  .btn,
+  .card {
+    border: 2px solid CanvasText;
+  }
+  .verdict--unc {
+    border-style: dashed;
+  }
+  .icon {
+    fill: none;
+    stroke: currentColor;
+  }
+  .icon--solid {
+    fill: currentColor;
+  }
+  :focus-visible {
+    outline-color: Highlight;
+  }
+  /* Buttons take the system button pair explicitly (and opt out of forcing), so the author
+     token pair can never be mixed with a forced background. (:root raises specificity over
+     app.css, which loads later.) */
+  :root .btn,
+  :root .btn--primary {
+    forced-color-adjust: none;
+    background-color: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+  }
+}

@@ -15,6 +15,29 @@ services:
       db:
         condition: service_healthy
 
+  # Web client dev server (spec 006): Vite on :5173, proxying /api and /health to the api service.
+  web:
+    build: ./web
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app/web
+      - /app/web/node_modules
+    depends_on:
+      - api
+
+  # End-to-end + accessibility matrix (Playwright). Opt-in: docker compose --profile e2e run --rm e2e
+  # The image tag must match the installed @playwright/test version.
+  e2e:
+    profiles: [e2e]
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    working_dir: /app/web
+    volumes:
+      - ./web:/app/web
+      - /app/web/node_modules
+    command: sh -c "npm ci && npx playwright test"
+    ipc: host
+
   db:
     image: postgres:17-alpine
     environment:

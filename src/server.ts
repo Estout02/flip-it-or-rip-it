@@ -1,6 +1,9 @@
 import { pathToFileURL } from 'node:url';
 import { isIP } from 'node:net';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import fastifyStatic from '@fastify/static';
 import { TtlCache } from './lib/cache.js';
 import { RateLimiter } from './lib/rate-limit.js';
 import { lookup, type LookupRequest } from './lib/pipeline.js';
@@ -38,6 +41,15 @@ export interface AppConfig {
    * for now so the bypass is closed even before that parser lands (research R3).
    */
   trustProxy: false | number | string;
+  /**
+   * Absolute path to the built web client (research R4), resolved once here
+   * against `process.cwd()` rather than left relative — a later `chdir` (or a
+   * differing container `WORKDIR`) must not change which directory gets
+   * served. Static serving is registered only when `<webDistDir>/index.html`
+   * exists: absent in dev, where the `web` compose service's Vite dev server
+   * serves the client on its own port instead.
+   */
+  webDistDir: string;
 }
 
 /**
@@ -220,6 +232,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     match: loadMatchConfig(env),
     port: numericSetting(env, 'PORT', 3000, (n) => Number.isInteger(n) && n >= 1 && n <= 65535),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
+    webDistDir: path.resolve(process.cwd(), env.WEB_DIST_DIR ?? 'web/dist'),
   };
 }
 
@@ -243,6 +256,60 @@ const lookupBodySchema = {
   // answer with no signal to the caller (research R7).
   additionalProperties: false,
 } as const;
+
+/**
+ * The exact CSP from research R8. `'wasm-unsafe-eval'` is the one narrow
+ * allowance WebAssembly compilation needs (the barcode scanner's ZXing-WASM
+ * decoder); same-origin serving (research R4) means nothing else ever needs
+ * to point off `'self'`.
+ */
+const WEB_CLIENT_CSP =
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+
+/**
+ * Files the PWA's `autoUpdate` flow depends on fetching fresh every time —
+ * serving a stale `index.html` or `sw.js` from an intermediary cache would
+ * pin a client to an old build indefinitely (research R4/R9).
+ */
+const WEB_CLIENT_NO_CACHE_BASENAMES = new Set([
+  'index.html',
+  'sw.js',
+  'registerSW.js',
+  'manifest.webmanifest',
+]);
+
+/**
+ * Serves the built web client from `dir` at the API's own origin (research
+ * R4), so the client's `/api` and `/health` calls need no CORS. This only
+ * adds routes via `@fastify/static` — no hooks — so it cannot add overhead to
+ * the `/api/lookup` hot path (constitution II). Fastify's router (find-my-way)
+ * always prefers a literal route (`/api/lookup`, `/health`) over the static
+ * plugin's wildcard fallback regardless of registration order, so it cannot
+ * shadow either. Cache-Control is fully hand-rolled here (`cacheControl:
+ * false`) because HTML, the service worker and hashed assets each need a
+ * different policy, which no single `maxAge`/`immutable` pair can express.
+ */
+export function registerWebClient(app: FastifyInstance, dir: string): void {
+  app.register(fastifyStatic, {
+    root: dir,
+    index: ['index.html'],
+    cacheControl: false,
+    // @fastify/static ≥ 10 hands setHeaders the FastifyReply, not the raw response.
+    setHeaders(reply, filePath) {
+      const base = path.basename(filePath);
+      if (base.endsWith('.html')) {
+        reply.header('Content-Security-Policy', WEB_CLIENT_CSP);
+        reply.header('Referrer-Policy', 'no-referrer');
+        reply.header('Permissions-Policy', 'camera=(self)');
+      }
+      if (WEB_CLIENT_NO_CACHE_BASENAMES.has(base)) {
+        reply.header('Cache-Control', 'no-cache');
+      } else if (filePath.split(path.sep).includes('assets')) {
+        reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  });
+}
 
 export function buildApp(
   deps: AppDeps,
@@ -298,6 +365,19 @@ export function buildApp(
     ebayCallsToday: rateLimiter.ebayCallsToday(),
   }));
 
+  // Local config only — zero eBay calls, so it carries no rate-limit hook and
+  // never touches the per-client lookup cap (research R5). Short max-age (not
+  // immutable) because these values come from server config, which an
+  // operator can change between deploys.
+  app.get('/api/meta', async (_request, reply) => {
+    reply.header('Cache-Control', 'public, max-age=300');
+    return {
+      defaultProfitThresholdCents: config.defaultProfitThresholdCents,
+      lookupDailyCap: config.lookupDailyCap,
+      marketplaceId: config.marketplaceId,
+    };
+  });
+
   app.post<{ Body: LookupRequest }>(
     '/api/lookup',
     {
@@ -314,6 +394,14 @@ export function buildApp(
     },
     async (request) => lookup(request.body ?? {}, deps),
   );
+
+  // Absent in dev (the `web` compose service's Vite dev server handles :5173
+  // instead) and absent until a production build exists — checked once here
+  // rather than inside registerWebClient so a missing dir is simply "don't
+  // register the plugin," not a runtime 404-generating registration.
+  if (existsSync(path.join(config.webDistDir, 'index.html'))) {
+    registerWebClient(app, config.webDistDir);
+  }
 
   return app;
 }

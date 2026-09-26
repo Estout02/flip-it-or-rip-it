@@ -1,0 +1,35 @@
+{
+  "name": "flip-or-rip-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host --port 4173",
+    "test": "vitest run && vite build --logLevel warn && node scripts/check-size.mjs",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "size": "node scripts/check-size.mjs",
+    "e2e": "playwright test",
+    "generate-icons": "pwa-assets-generator"
+  },
+  "dependencies": {
+    "barcode-detector": "^3.2.2",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
+    "@preact/preset-vite": "^2.10.6",
+    "@testing-library/preact": "^3.2.4",
+    "@types/node": "^24.19.0",
+    "@vite-pwa/assets-generator": "^1.0.4",
+    "axe-core": "^4.13.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.1",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^5.0.2"
+  }
+}

@@ -1,27 +1,24 @@
 <!--
 Sync Impact Report
 ==================
-Version change: (template, unversioned) → 1.0.0
-Rationale: Initial ratification — all placeholders filled from founder-supplied
-principles and docs/PROJECT_BRIEF.md + docs/EBAY_API_NOTES.md.
+Version change: 1.0.0 → 1.1.0
+Rationale: MINOR — adds Principle VIII (Accessible by Default) and extends the Stack
+constraint to the web client introduced by spec 006. Requested by the founder at the
+006 kickoff (2026-09-26): "mobile first … ADA compliant, clean and performant".
 
-Modified principles: n/a (initial adoption)
+Modified principles:
+- II. Latency First — clarified that the client's first-load budget is part of latency.
 Added sections:
-- Core Principles (7): I. eBay Compliance Is Non-Negotiable; II. Latency First;
-  III. Cost Discipline; IV. Spec-Driven Development; V. Sandbox-First Testing;
-  VI. Money Is Integer Cents; VII. Extensible Verdict Pipeline
-- Additional Constraints
-- Development Workflow
-- Governance
-Removed sections: none (template placeholders replaced)
+- VIII. Accessible by Default (WCAG 2.2 AA)
+Modified sections:
+- Additional Constraints → Stack: web client (`web/`, Preact + TypeScript + Vite)
+- Development Workflow → review checklist gains (VIII)
 
 Templates checked:
-- ✅ .specify/templates/plan-template.md — Constitution Check gate is filled
-  dynamically per feature; no static edits required.
-- ✅ .specify/templates/spec-template.md — no constitution references; aligned.
-- ✅ .specify/templates/tasks-template.md — no constitution references; aligned.
-- ✅ .specify/templates/checklist-template.md — no constitution references; aligned.
-- ✅ CLAUDE.md — conventions already mirror these principles; no update needed.
+- ✅ .specify/templates/plan-template.md — Constitution Check is filled per feature; no edit.
+- ✅ .specify/templates/spec-template.md — no principle references; no edit.
+- ✅ .specify/templates/tasks-template.md — no principle references; no edit.
+- ⚠ CLAUDE.md — Stack/Commands gain the web client when spec 006 lands (tracked in 006 tasks).
 
 Deferred TODOs: none.
 -->
@@ -60,6 +57,9 @@ The scan-to-verdict path MUST feel instant.
 - Every addition to the lookup path (auth, logging, persistence, analytics) MUST justify
   its latency cost; anything deferrable runs after the verdict is returned.
 - Performance regressions on the lookup path are release blockers, not backlog items.
+- Latency includes the client: the web client's initial load stays within its spec's budget
+  (≤ 100 KB compressed for spec 006), and heavy capabilities (e.g. the barcode decoder) load
+  only when the user invokes them.
 
 ### III. Cost Discipline
 
@@ -112,10 +112,27 @@ without reworking the pipeline.
 - Shortcuts that fuse steps for convenience are constitution violations even if faster
   to write.
 
+### VIII. Accessible by Default (WCAG 2.2 AA)
+
+A reseller who can't see a color, use a mouse, or read small text must get the same verdict,
+as fast. Every user-facing surface MUST conform to **WCAG 2.2 Level AA**.
+
+- Meaning is never carried by color alone — verdicts combine text, icon, and color.
+- Everything is keyboard-operable with a visible, unobscured focus indicator; touch targets
+  are at least 44×44 CSS px.
+- Status changes (results, errors) are announced to assistive technology.
+- Color tokens are contrast-verified (4.5:1 text, 3:1 UI) in every supported color scheme,
+  and layouts reflow at 320 px / 400% zoom.
+- Automated accessibility checks (axe) run on every screen state in the test suite; a new
+  state without an accessibility test is incomplete. Automated checks do not replace a
+  keyboard and screen-reader walkthrough before release.
+
 ## Additional Constraints
 
 - **Stack**: Node 24 + TypeScript + Fastify API (`src/server.ts`); Postgres 17 provisioned
-  but unused until saved inventory lands post-MVP; Vitest for tests.
+  but unused until saved inventory lands post-MVP; Vitest for tests. Web client in `web/`
+  (Preact + TypeScript + Vite, its own package), served same-origin by the API in
+  production; Playwright for end-to-end and accessibility tests.
 - **Stateless MVP**: the API holds no per-user server state beyond caching and rate-limit
   counters until the saved-inventory feature is specced.
 - **Secrets**: eBay credentials live in `.env` (gitignored, from `.env.example`); never
@@ -133,7 +150,7 @@ without reworking the pipeline.
 - Reviews verify, at minimum: no scraping or client-side eBay calls (I), no new blocking
   work in the lookup path (II), caching/caps for any new external call (III), work traces
   to a spec (IV), tests run in Docker (V), money in cents (VI), pipeline step boundaries
-  intact (VII).
+  intact (VII), accessibility checks for every new UI state (VIII).
 
 ## Governance
 
@@ -150,4 +167,4 @@ is amended.
   violations require an entry in the plan's Complexity Tracking table with a justification
   or the design is revised. Principle I admits no justified violations.
 
-**Version**: 1.0.0 | **Ratified**: 2026-07-07 | **Last Amended**: 2026-07-07
+**Version**: 1.1.0 | **Ratified**: 2026-07-07 | **Last Amended**: 2026-09-26

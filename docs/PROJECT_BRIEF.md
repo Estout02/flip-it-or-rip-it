@@ -101,6 +101,8 @@ The celebration is *decluttering*, not gambling:
 4. **User eBay account linking (OAuth)**: **Phase 2.** MVP runs on app-level keys, lookups only.
 5. **Photo → LLM item identification**: gated entirely on **economics** — it ships only if the
    per-lookup cost is viable; the founder will not run it at a loss. Barcode-first MVP.
+6. **Platform, decided (2026-09-26)**: a **responsive, installable web app first** (spec 006:
+   mobile-first, full desktop layout, WCAG 2.2 AA). Native apps may follow later on the same API.
 
 ## Data model sketch (items)
 

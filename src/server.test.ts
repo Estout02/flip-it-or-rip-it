@@ -1,3 +1,6 @@
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, loadConfig, type AppConfig } from './server.js';
@@ -65,6 +68,14 @@ class FakeBrowseClient implements EbayBrowseClient {
   }
 }
 
+// Guaranteed not to exist on disk, so buildApp never registers static serving
+// unless a test explicitly overrides it — independent of whatever the other
+// agent's concurrent `web/` build may or may not have produced on disk.
+const ABSENT_WEB_DIST_DIR = path.join(
+  os.tmpdir(),
+  `flip-or-rip-web-dist-absent-${process.pid}`,
+);
+
 const testConfig: AppConfig = {
   ebayEnv: 'sandbox',
   ebayClientId: '',
@@ -82,6 +93,7 @@ const testConfig: AppConfig = {
   match: MATCH_DEFAULTS,
   port: 0,
   trustProxy: false,
+  webDistDir: ABSENT_WEB_DIST_DIR,
 };
 
 let cleanup: Array<() => void | Promise<void>> = [];
@@ -981,6 +993,80 @@ describe('POST /api/lookup — burst traffic costs one marketplace call (US4)', 
 
     for (const res of responses) expect(res.statusCode).toBe(200);
     expect(client.calls).toHaveLength(1);
+  });
+});
+
+describe('GET /api/meta (spec 006, research R5)', () => {
+  it('reports client-facing settings straight from config', async () => {
+    const { app } = makeApp({
+      config: { defaultProfitThresholdCents: 1234, lookupDailyCap: 7, marketplaceId: 'EBAY_GB' },
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/meta' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['cache-control']).toBe('public, max-age=300');
+    expect(res.json()).toEqual({
+      defaultProfitThresholdCents: 1234,
+      lookupDailyCap: 7,
+      marketplaceId: 'EBAY_GB',
+    });
+  });
+
+  it('is never charged against the per-client lookup cap', async () => {
+    const { app } = makeApp({ config: { lookupDailyCap: 1 } });
+
+    for (let i = 0; i < 3; i++) {
+      const res = await app.inject({ method: 'GET', url: '/api/meta' });
+      expect(res.statusCode).toBe(200);
+    }
+    // The cap is 1 and untouched so far — the first (and only) lookup still succeeds.
+    expect((await lookup(app, { identifier: '9780345391803' })).statusCode).toBe(200);
+  });
+});
+
+const WEB_CLIENT_CSP =
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+
+describe('web client static serving (spec 006, research R4/R8)', () => {
+  let dir: string | undefined;
+
+  afterEach(() => {
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  it('serves index.html and hashed assets with the specified headers when the dist dir exists', async () => {
+    dir = mkdtempSync(path.join(os.tmpdir(), 'flip-or-rip-web-dist-'));
+    writeFileSync(path.join(dir, 'index.html'), '<!doctype html><html><body>app</body></html>');
+    mkdirSync(path.join(dir, 'assets'));
+    writeFileSync(path.join(dir, 'assets', 'a.js'), 'console.log(1);');
+
+    const { app } = makeApp({ config: { webDistDir: dir } });
+
+    const indexRes = await app.inject({ method: 'GET', url: '/' });
+    expect(indexRes.statusCode).toBe(200);
+    expect(indexRes.headers['cache-control']).toBe('no-cache');
+    expect(indexRes.headers['content-security-policy']).toBe(WEB_CLIENT_CSP);
+    expect(indexRes.headers['referrer-policy']).toBe('no-referrer');
+    expect(indexRes.headers['permissions-policy']).toBe('camera=(self)');
+
+    const assetRes = await app.inject({ method: 'GET', url: '/assets/a.js' });
+    expect(assetRes.statusCode).toBe(200);
+    expect(assetRes.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    // Security headers are HTML-only — an asset response must not carry them.
+    expect(assetRes.headers['content-security-policy']).toBeUndefined();
+    expect(assetRes.headers['referrer-policy']).toBeUndefined();
+    expect(assetRes.headers['permissions-policy']).toBeUndefined();
+  });
+
+  it('registers nothing when the dist dir has no index.html, and /api/lookup is unaffected', async () => {
+    const { app } = makeApp(); // testConfig.webDistDir points at a directory that doesn't exist
+
+    const rootRes = await app.inject({ method: 'GET', url: '/' });
+    expect(rootRes.statusCode).toBe(404);
+
+    expect((await lookup(app, { identifier: '9780345391803' })).statusCode).toBe(200);
   });
 });
 
