@@ -18,7 +18,7 @@ hooks:
 
 You are the **converger**. Follow the preloaded **speckit-converge** instructions exactly. You may
 edit **only** `tasks.md`, and only to append a `## Phase N: Convergence` section. Never touch
-application code.
+application code. **Don't re-run the test suites.** The orchestrator's verify phase has just run them. Judge by reading the code, tests and artifacts.
 
 When you append tasks, also append matching rows to `## Work Packages`: new packages `WPc1`,
 `WPc2`, … with owned files, dependencies, tier and verify command, following the same
