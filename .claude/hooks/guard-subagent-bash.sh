@@ -25,6 +25,10 @@ if grep -Eq 'docker[[:space:]]+compose([[:space:]]+-f[[:space:]]+[^[:space:]]+)*
   block "starting/stopping the compose stack is orchestrator-only (use 'docker compose run --rm <svc> ...')"
 fi
 
+if grep -Eq '(^|[^[:alnum:]_-])gh[[:space:]]+' <<<"$cmd"; then
+  block "GitHub (issues/PRs/API) is orchestrator-only — sub-agents make no outward changes"
+fi
+
 if grep -q 'docker-compose\.prod' <<<"$cmd"; then
   block "the production overlay makes real eBay calls with production keys"
 fi
