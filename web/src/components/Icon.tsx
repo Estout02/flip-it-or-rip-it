@@ -45,6 +45,7 @@ const PATHS: Record<IconName, ComponentChildren> = {
   ),
   trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
+  flask: <path d="M9 3h6M10 3v6L4.8 18.2A1.8 1.8 0 0 0 6.4 21h11.2a1.8 1.8 0 0 0 1.6-2.8L14 9V3M7.2 15h9.6" />,
 };
 
 export function Icon({ name, class: className }: { name: IconName; class?: string }) {

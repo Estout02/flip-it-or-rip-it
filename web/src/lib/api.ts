@@ -67,6 +67,18 @@ function isMeta(v: unknown): v is Meta {
   );
 }
 
+/** Strips unrecognized `ebayEnv` values (spec 007) so the client never renders a badge for one it doesn't understand. */
+function toMeta(m: Meta): Meta {
+  const out: Meta = {
+    defaultProfitThresholdCents: m.defaultProfitThresholdCents,
+    lookupDailyCap: m.lookupDailyCap,
+    marketplaceId: m.marketplaceId,
+  };
+  const env = (m as { ebayEnv?: unknown }).ebayEnv;
+  if (env === 'production' || env === 'sandbox') out.ebayEnv = env;
+  return out;
+}
+
 /** Cached in memory; never rejects — falls back to the documented defaults. */
 export function getMeta(): Promise<Meta> {
   metaPromise ??= fetch('/api/meta')
@@ -74,7 +86,7 @@ export function getMeta(): Promise<Meta> {
       if (!res.ok) throw new Error(String(res.status));
       const body: unknown = await res.json();
       if (!isMeta(body)) throw new Error('bad meta');
-      return body;
+      return toMeta(body);
     })
     .catch(() => {
       metaPromise = null; // allow a later retry

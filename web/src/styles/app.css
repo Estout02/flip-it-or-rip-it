@@ -64,6 +64,63 @@
   }
 }
 
+/* ---------- Environment badge (spec 007, plan D3/D4) ---------- */
+.env-badge,
+.env-note,
+.chip--test {
+  background: var(--test-tint);
+  color: var(--test-fg);
+  border: 1.5px solid var(--test-border); /* solid: dashed is reserved for UNCERTAIN */
+}
+.env-badge,
+.env-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.125rem var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--step--1);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.env-badge {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  margin-inline-start: auto; /* hugs the Settings button */
+}
+.env-note {
+  justify-self: start;
+}
+@media (max-width: 479.98px) {
+  /* Visually only: assistive technology still gets "— eBay sandbox" at every width (FR-002). */
+  .env-badge__wide {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (max-width: 359.98px) {
+  /* Room for the badge at 320 px: keep the logo mark; the h1's accessible name is unchanged. */
+  .app-header--badged .wordmark__text {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (forced-colors: active) {
+  .env-badge,
+  .env-note {
+    border: 1px solid CanvasText;
+    forced-color-adjust: auto;
+  }
+}
+
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex;

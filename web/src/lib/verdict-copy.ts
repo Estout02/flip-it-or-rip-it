@@ -14,7 +14,8 @@ export type IconName =
   | 'check'
   | 'clock'
   | 'trash'
-  | 'close';
+  | 'close'
+  | 'flask';
 
 export type Treatment = 'flip' | 'risky' | 'rip' | 'unc';
 
@@ -136,3 +137,15 @@ export const SCANNER_COPY = {
 } as const;
 
 export const STORAGE_UNAVAILABLE = "Recent lookups can't be saved in this browser.";
+
+// Spec 007: environment badge. Verbatim from specs/007-environment-badge/spec.md.
+export const TEST_DATA_LABEL = 'Test data';
+export const TEST_DATA_WIDE = ' — eBay sandbox';
+export const TEST_DATA_EXPLAIN = ". Results come from eBay's test environment, not real listings.";
+export const SANDBOX_NO_MARKET =
+  "You're using eBay's test environment, which has very few listings. This item may well be for sale on real eBay.";
+
+/** True for any non-production eBay environment, including unrecognized future values. Undefined (unknown) is never treated as test. */
+export function isTestEnv(env?: string): boolean {
+  return env !== undefined && env !== 'production';
+}

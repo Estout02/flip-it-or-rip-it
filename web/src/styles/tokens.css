@@ -19,6 +19,9 @@
  *   --text-muted on each tint      ≥ 5.77 / ≥ 6.64   (history note inside the verdict band)
  *   --focus on each tint           ≥ 5.64 / ≥ 7.20   (focus ring inside the verdict band)
  *   verdict --*-fg on --surface    ≥ 6.69 / ≥ 8.51   (verdict icon/label outside the band)
+ *   --test-fg on --test-tint       8.73 /  8.81     --test-fg on --bg            9.65 / 10.68   (spec 007 badge)
+ *   --text on --test-tint         14.84 / 13.42
+ *   --test-border on --bg (UI)     5.50 /  6.15     --test-border on --test-tint 4.98 /  5.07
  *
  * --border-subtle is decorative only and never carries meaning.
  */
@@ -44,6 +47,9 @@
   --rip-tint: #eee9fb;
   --unc-fg: #474d55;
   --unc-tint: #eceef1;
+  --test-fg: #1e3a8a;
+  --test-tint: #e4ecfb;
+  --test-border: #3b5bcc;
 
   --shadow: 0 1px 2px rgb(23 25 28 / 0.06), 0 4px 16px rgb(23 25 28 / 0.06);
 
@@ -91,6 +97,9 @@
     --rip-tint: #211a3b;
     --unc-fg: #c5cad0;
     --unc-tint: #23272b;
+    --test-fg: #a9c1ff;
+    --test-tint: #18223d;
+    --test-border: #6f8fe8;
 
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
   }

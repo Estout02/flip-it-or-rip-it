@@ -366,15 +366,16 @@ export function buildApp(
   }));
 
   // Local config only — zero eBay calls, so it carries no rate-limit hook and
-  // never touches the per-client lookup cap (research R5). Short max-age (not
-  // immutable) because these values come from server config, which an
-  // operator can change between deploys.
+  // never touches the per-client lookup cap (research R5). no-cache (spec 007,
+  // plan D2): an operator switches eBay environments by restarting, and a
+  // cached response would show sandbox answers without the "Test data" badge.
   app.get('/api/meta', async (_request, reply) => {
-    reply.header('Cache-Control', 'public, max-age=300');
+    reply.header('Cache-Control', 'no-cache');
     return {
       defaultProfitThresholdCents: config.defaultProfitThresholdCents,
       lookupDailyCap: config.lookupDailyCap,
       marketplaceId: config.marketplaceId,
+      ebayEnv: config.ebayEnv,
     };
   });
 

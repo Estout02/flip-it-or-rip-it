@@ -85,4 +85,49 @@ describe('RecentList', () => {
     render(<RecentList history={[]} storageOk={false} onSelect={vi.fn()} onClear={vi.fn()} />);
     expect(screen.getByText("Recent lookups can't be saved in this browser.")).toBeTruthy();
   });
+
+  describe('test-data chip (spec 007)', () => {
+    it('shows the chip and the name prefix for a sandbox entry', () => {
+      render(
+        <RecentList
+          history={[{ ...entryFor(flip, { id: 's', checkedAt: now.toISOString() }), ebayEnv: 'sandbox' as const }]}
+          storageOk
+          onSelect={vi.fn()}
+          onClear={vi.fn()}
+        />,
+      );
+      const time = formatCheckedAt(now.toISOString());
+      const button = screen.getByRole('button', {
+        name: `Test data: Flip it: Chrono Trigger (Super Nintendo, 1995) — Cart Only, +$22.07 profit, checked ${time}`,
+      });
+      expect(button.firstElementChild!.classList.contains('chip--test')).toBe(true);
+      expect(button.firstElementChild!.textContent).toBe('Test data');
+    });
+
+    it('shows no chip for a production entry', () => {
+      render(
+        <RecentList
+          history={[{ ...entryFor(flip, { id: 'p', checkedAt: now.toISOString() }), ebayEnv: 'production' as const }]}
+          storageOk
+          onSelect={vi.fn()}
+          onClear={vi.fn()}
+        />,
+      );
+      expect(document.querySelector('.chip--test')).toBeNull();
+      expect(document.querySelector('.recent-item')!.getAttribute('aria-label')).toMatch(/^Flip it: /);
+    });
+
+    it('shows no chip for a legacy entry with no recorded environment', () => {
+      render(
+        <RecentList
+          history={[entryFor(flip, { id: 'l', checkedAt: now.toISOString() })]}
+          storageOk
+          onSelect={vi.fn()}
+          onClear={vi.fn()}
+        />,
+      );
+      expect(document.querySelector('.chip--test')).toBeNull();
+      expect(document.querySelector('.recent-item')!.getAttribute('aria-label')).toMatch(/^Flip it: /);
+    });
+  });
 });

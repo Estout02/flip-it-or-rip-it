@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { entryFor, flip, jsonResponse, rip } from '../test/fixtures';
 import { loadHistory, resetStorageForTests } from './storage';
+import type { EbayEnv } from './types';
 import { useLookup } from './use-lookup';
 
 type Pending = { resolve: (r: Response) => void; reject: (e: unknown) => void; init?: RequestInit };
@@ -103,5 +104,40 @@ describe('useLookup', () => {
     act(() => result.current.showEntry(entry));
     await act(async () => pending[0]!.resolve(jsonResponse(flip)));
     expect(result.current.state).toEqual({ status: 'success', entry, fromHistory: true });
+  });
+
+  it('stamps the environment onto a saved entry (spec 007)', async () => {
+    const { result } = renderHook(() => useLookup('sandbox'));
+    act(() => result.current.submit({ title: 'x' }));
+    await act(async () => pending[0]!.resolve(jsonResponse(flip)));
+    await waitFor(() => expect(result.current.state.status).toBe('success'));
+    const s = result.current.state;
+    if (s.status !== 'success') throw new Error('unreachable');
+    expect(s.entry.ebayEnv).toBe('sandbox');
+    expect(loadHistory()[0]!.ebayEnv).toBe('sandbox');
+  });
+
+  it('omits ebayEnv when no environment is known (spec 007)', async () => {
+    const { result } = renderHook(() => useLookup());
+    act(() => result.current.submit({ title: 'x' }));
+    await act(async () => pending[0]!.resolve(jsonResponse(flip)));
+    await waitFor(() => expect(result.current.state.status).toBe('success'));
+    const s = result.current.state;
+    if (s.status !== 'success') throw new Error('unreachable');
+    expect('ebayEnv' in s.entry).toBe(false);
+    expect('ebayEnv' in loadHistory()[0]!).toBe(false);
+  });
+
+  it('reads the environment at save time, not at mount time (spec 007)', async () => {
+    const { result, rerender } = renderHook(({ env }: { env: EbayEnv | undefined }) => useLookup(env), {
+      initialProps: { env: undefined as EbayEnv | undefined },
+    });
+    rerender({ env: 'production' });
+    act(() => result.current.submit({ title: 'x' }));
+    await act(async () => pending[0]!.resolve(jsonResponse(flip)));
+    await waitFor(() => expect(result.current.state.status).toBe('success'));
+    const s = result.current.state;
+    if (s.status !== 'success') throw new Error('unreachable');
+    expect(s.entry.ebayEnv).toBe('production');
   });
 });

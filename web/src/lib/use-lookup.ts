@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { announce } from './announce';
 import { lookup, LookupFailure } from './api';
 import { addToHistory, clearHistory as clearStored, loadHistory, newId } from './storage';
-import type { HistoryEntry, LookupInput, LookupState } from './types';
+import type { EbayEnv, HistoryEntry, LookupInput, LookupState } from './types';
 import { CHECKING } from './verdict-copy';
 
 function sameInput(a: LookupInput, b: LookupInput): boolean {
@@ -37,7 +37,7 @@ export type UseLookup = {
   clearFieldError(): void;
 };
 
-export function useLookup(): UseLookup {
+export function useLookup(ebayEnv?: EbayEnv): UseLookup {
   const [state, setState] = useState<LookupState>({ status: 'idle' });
   const [shown, setShown] = useState<LookupState>({ status: 'idle' });
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -50,6 +50,9 @@ export function useLookup(): UseLookup {
   const beforeLoading = useRef<LookupState>({ status: 'idle' });
   const shownRef = useRef(shown);
   shownRef.current = shown;
+  // Spec 007 (T016): submit has [] deps, so it must read the current environment via a ref.
+  const envRef = useRef(ebayEnv);
+  envRef.current = ebayEnv;
 
   const cancel = () => {
     controller.current?.abort();
@@ -85,6 +88,7 @@ export function useLookup(): UseLookup {
           query: { identifier: input.identifier ?? null, title: input.title ?? null },
           costBasisCents: input.costBasisCents ?? 0,
           result,
+          ...(envRef.current !== undefined ? { ebayEnv: envRef.current } : {}),
         };
         setHistory(addToHistory(entry));
         const next: LookupState = { status: 'success', entry, fromHistory: false };

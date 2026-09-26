@@ -5,8 +5,10 @@ import { useModal } from '../lib/use-modal';
 import {
   entryTitle,
   formatCheckedAt,
+  isTestEnv,
   recentProfitPhrase,
   STORAGE_UNAVAILABLE,
+  TEST_DATA_LABEL,
   VERDICT_COPY,
 } from '../lib/verdict-copy';
 import { Icon } from './Icon';
@@ -71,17 +73,25 @@ export function RecentList({ history, storageOk, onSelect, onClear }: Props) {
             const title = entryTitle(e);
             const profit = recentProfitPhrase(e.result);
             const time = formatCheckedAt(e.checkedAt, now);
-            // Explicit name per S13: "{Verdict label}: {title}, {profit phrase}, checked {time}".
-            // It starts with the visible text, in visual order, word for word (WCAG 2.5.3 label in
-            // name); only the separators differ. Verified against Chromium's tree in e2e/a11y.spec.ts.
+            const test = isTestEnv(e.ebayEnv);
+            // Explicit name per S13: "{Verdict label}: {title}, {profit phrase}, checked {time}",
+            // optionally prefixed "Test data: " (spec 007). It starts with the visible text, in
+            // visual order, word for word (WCAG 2.5.3 label in name); only the separators differ.
+            // Verified against Chromium's tree in e2e/a11y.spec.ts.
             return (
               <li key={e.id}>
                 <button
                   type="button"
                   class="recent-item"
-                  aria-label={`${copy.label}: ${title}, ${profit}, checked ${time}`}
+                  aria-label={`${test ? `${TEST_DATA_LABEL}: ` : ''}${copy.label}: ${title}, ${profit}, checked ${time}`}
                   onClick={() => onSelect(e)}
                 >
+                  {test && (
+                    <span class="chip chip--test">
+                      <Icon name="flask" class="icon--chip" />
+                      {TEST_DATA_LABEL}
+                    </span>
+                  )}
                   <span class={`chip chip--${copy.treatment}`}>
                     <Icon name={copy.icon} class="icon--chip" />
                     {copy.label}

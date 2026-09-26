@@ -1005,12 +1005,23 @@ describe('GET /api/meta (spec 006, research R5)', () => {
     const res = await app.inject({ method: 'GET', url: '/api/meta' });
 
     expect(res.statusCode).toBe(200);
-    expect(res.headers['cache-control']).toBe('public, max-age=300');
+    expect(res.headers['cache-control']).toBe('no-cache');
     expect(res.json()).toEqual({
       defaultProfitThresholdCents: 1234,
       lookupDailyCap: 7,
       marketplaceId: 'EBAY_GB',
+      ebayEnv: 'sandbox',
     });
+  });
+
+  it('reports the eBay environment (spec 007)', async () => {
+    const { app } = makeApp({ config: { ebayEnv: 'production' } });
+
+    const res = await app.inject({ method: 'GET', url: '/api/meta' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ebayEnv).toBe('production');
+    expect(res.headers['cache-control']).toBe('no-cache');
   });
 
   it('is never charged against the per-client lookup cap', async () => {

@@ -50,10 +50,14 @@ export type LookupInput = {
   profitThresholdCents?: number;
 };
 
+export type EbayEnv = 'production' | 'sandbox';
+
 export type Meta = {
   defaultProfitThresholdCents: number;
   lookupDailyCap: number;
   marketplaceId: string;
+  /** Which eBay answers lookups (spec 007). Absent = unknown: the client shows no badge. */
+  ebayEnv?: EbayEnv;
 };
 
 export type LookupError =
@@ -71,6 +75,8 @@ export type HistoryEntry = {
   /** 0 when not entered. */
   costBasisCents: number;
   result: VerdictResult;
+  /** Environment the result was checked in (spec 007). Absent on entries saved before 007 or while unknown. */
+  ebayEnv?: EbayEnv;
 };
 
 export type LookupState =

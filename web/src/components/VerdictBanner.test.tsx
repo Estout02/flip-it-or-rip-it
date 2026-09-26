@@ -47,4 +47,27 @@ describe('VerdictBanner', () => {
     render(<VerdictBanner result={flip} />);
     expect(screen.getByRole('heading', { level: 2 }).hasAttribute('aria-describedby')).toBe(false);
   });
+
+  describe('env note (spec 007, US3)', () => {
+    it('savedAt with testData: env note and combined aria-describedby', () => {
+      render(<VerdictBanner result={flip} savedAt="2026-09-26T19:42:00.000Z" testData />);
+      const note = document.getElementById('result-env-note')!;
+      expect(note.textContent).toBe('Test data — eBay sandbox');
+      const h = screen.getByRole('heading', { level: 2 });
+      expect(h.getAttribute('aria-describedby')).toBe('result-saved-note result-env-note');
+    });
+
+    it('savedAt without testData: no env note, single aria-describedby', () => {
+      render(<VerdictBanner result={flip} savedAt="2026-09-26T19:42:00.000Z" />);
+      expect(document.getElementById('result-env-note')).toBeNull();
+      const h = screen.getByRole('heading', { level: 2 });
+      expect(h.getAttribute('aria-describedby')).toBe('result-saved-note');
+    });
+
+    it('testData without savedAt: no env note, no aria-describedby', () => {
+      render(<VerdictBanner result={flip} testData />);
+      expect(document.getElementById('result-env-note')).toBeNull();
+      expect(screen.getByRole('heading', { level: 2 }).hasAttribute('aria-describedby')).toBe(false);
+    });
+  });
 });
