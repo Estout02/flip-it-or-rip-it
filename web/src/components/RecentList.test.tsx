@@ -32,6 +32,8 @@ describe('RecentList', () => {
       }),
     ).toBe(first);
     expect(second!.textContent).toContain('Flip it');
+    // Label in name (2.5.3): the visible text carries "checked" too, in the same order.
+    expect(first!.textContent).toContain(`· checked ${time}`);
   });
 
   it('never phrases an unmeasured value as profit', () => {

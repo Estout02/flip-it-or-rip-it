@@ -72,7 +72,8 @@ export function RecentList({ history, storageOk, onSelect, onClear }: Props) {
             const profit = recentProfitPhrase(e.result);
             const time = formatCheckedAt(e.checkedAt, now);
             // Explicit name per S13: "{Verdict label}: {title}, {profit phrase}, checked {time}".
-            // It contains the visible text in visual order (WCAG 2.5.3 label in name).
+            // It starts with the visible text, in visual order, word for word (WCAG 2.5.3 label in
+            // name); only the separators differ. Verified against Chromium's tree in e2e/a11y.spec.ts.
             return (
               <li key={e.id}>
                 <button
@@ -89,7 +90,8 @@ export function RecentList({ history, storageOk, onSelect, onClear }: Props) {
                   <span class="recent-item__meta">
                     <span class="money">{profit}</span>
                     <span aria-hidden="true"> · </span>
-                    <span>{time}</span>
+                    {/* "checked" is visible too, so the name contains the visible text in order (2.5.3). */}
+                    <span>checked {time}</span>
                   </span>
                 </button>
               </li>

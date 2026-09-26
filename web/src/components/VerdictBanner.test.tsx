@@ -37,5 +37,14 @@ describe('VerdictBanner', () => {
   it('renders the S12 saved-result note', () => {
     render(<VerdictBanner result={flip} savedAt={new Date().toISOString()} />);
     expect(screen.getByText(/^Checked .+\. Saved result, not refreshed\.$/)).toBeTruthy();
+    // The note precedes the focused heading, so the heading is described by it (e2e finding).
+    const h = screen.getByRole('heading', { level: 2 });
+    expect(h.getAttribute('aria-describedby')).toBe('result-saved-note');
+    expect(document.getElementById('result-saved-note')!.textContent).toMatch(/Saved result, not refreshed\.$/);
+  });
+
+  it('has no description on a fresh result', () => {
+    render(<VerdictBanner result={flip} />);
+    expect(screen.getByRole('heading', { level: 2 }).hasAttribute('aria-describedby')).toBe(false);
   });
 });

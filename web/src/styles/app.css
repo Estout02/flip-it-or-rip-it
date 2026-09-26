@@ -569,6 +569,12 @@ span.suggestion {
   font-size: var(--step-3);
   font-weight: 800;
 }
+/* S8's "Your recent lookups are still here." is the panel's only action: a full-size target. */
+.error-panel .link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--target);
+}
 
 /* ---------- Recent ---------- */
 .recent {

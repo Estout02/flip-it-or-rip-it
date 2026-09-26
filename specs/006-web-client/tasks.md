@@ -99,14 +99,14 @@ state, and SC-003 is defined by them. Component tests are colocated (`*.test.tsx
 
 ## Phase 9: End-to-end, accessibility matrix, budget
 
-- [ ] T036 `web/playwright.config.ts` (`webServer: { command: 'npm run build && npx vite preview --port 4173 --host', port: 4173 }`, `use.baseURL`; projects: `mobile-320` (320×640, hasTouch), `mobile-390` (390×844, hasTouch, isMobile), `desktop-1280` (1280×800); each project runs with `colorScheme` light and dark via a parameterised describe). `web/e2e/fixtures.ts`: canned `VerdictResult`s for FLIP, FLIP_RISKY, RIP, UNCERTAIN and NO_MARKET_DATA, and error responses 400/429/503, plus a helper `mockApi(page, handler)` using `page.route('**/api/**')`. Specs:
+- [X] T036 `web/playwright.config.ts` (`webServer: { command: 'npm run build && npx vite preview --port 4173 --host', port: 4173 }`, `use.baseURL`; projects: `mobile-320` (320×640, hasTouch), `mobile-390` (390×844, hasTouch, isMobile), `desktop-1280` (1280×800); each project runs with `colorScheme` light and dark via a parameterised describe). `web/e2e/fixtures.ts`: canned `VerdictResult`s for FLIP, FLIP_RISKY, RIP, UNCERTAIN and NO_MARKET_DATA, and error responses 400/429/503, plus a helper `mockApi(page, handler)` using `page.route('**/api/**')`. Specs:
   - `core.spec.ts`: type → verdict for each fixture; focus on the verdict heading; basis note visible; Check another focuses the input; Recent persists across reload; selecting Recent makes no request (assert via route counter); settings persist across reload; stale-response guard (delay the first response, submit twice, and only the second renders)
   - `errors.spec.ts`: 400/429/503/offline (`context.setOffline(true)`) copy and focus; input preserved
   - `a11y.spec.ts`: for every state S0–S15 reachable without a camera (scanner: mock `navigator.mediaDevices` undefined → S15 unsupported, and `getUserMedia` rejecting `NotAllowedError` → denied), in both color schemes, run `new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()` → `violations` is empty. For S2–S6 also run under `page.emulateMedia({ forcedColors: 'active' })`. Assert `scrollWidth <= clientWidth`, and that every visible `button, a, input, summary, select` (excluding links inside paragraphs) has a bounding box ≥ 44×44
   - `layout.spec.ts`: desktop shows form, result and Recent simultaneously in three columns (bounding boxes side by side); mobile 320 shows one column and the bottom Scan bar doesn't overlap the focused element when tabbing (for each focus stop, the focused element's rect doesn't intersect `.scan-dock`'s rect); 400% zoom emulation (viewport 320 wide at deviceScaleFactor 1, which approximates 1280/4) has no horizontal scroll; reduced motion → the computed `transition-duration` on the result is ≈ 0
   - `offline.spec.ts`: load once, go offline, reload → the app shell renders and Recent entries show
 - [X] T037 `web/scripts/check-size.mjs`: read `dist/.vite/manifest.json`, take the `index.html` entry, recursively collect its `imports` (static only, **not** `dynamicImports`) plus their `css`, gzip each (`zlib.gzipSync`, level 9), sum, print `initial: X KB gzip (limit 100 KB)`, and exit 1 if over. Also exit 1 if any initial chunk's source contains `zxing` or `barcode-detector`
-- [ ] T038 Run everything in Docker: `docker compose run --rm web npm test`, `docker compose run --rm web npm run typecheck`, `docker compose --profile e2e run --rm e2e`, `docker compose run --rm api npm test`, `docker compose run --rm api npm run typecheck`. All green. Fix, don't skip
+- [X] T038 Run everything in Docker: `docker compose run --rm web npm test`, `docker compose run --rm web npm run typecheck`, `docker compose --profile e2e run --rm e2e`, `docker compose run --rm api npm test`, `docker compose run --rm api npm run typecheck`. All green. Fix, don't skip
 
 ---
 
@@ -173,3 +173,85 @@ Deviations from the literal task text, each keeping the task's intent:
   otherwise mixed the author `--btn-fg` with the forced background and reported a false 1.1:1.
 - **T035**: confirmed with a scratch Chromium run: after one visit, offline reload renders the shell
   and Recent, and a lookup shows the offline panel. The e2e `offline.spec.ts` (T036) still owns this.
+
+## Implementation notes (T036, T038)
+
+**Result**: 354 e2e tests: 118 per project (`mobile-320`, `mobile-390`, `desktop-1280`), each being 56
+light + 56 dark + 6 theme-independent "flagged concerns". Per spec: a11y 192, core 96, errors 36,
+layout 24, offline 6. **344 pass, 10 skip by design** (layout tests that apply to one width only), 0
+fail. The suite was stable across `--repeat-each=3` (1,032 runs). `/api/**` is always mocked through
+`page.route`, or `context.route` for the service-worker spec, and an auto fixture aborts and **fails
+the test on any request that leaves localhost**, so no real API or eBay call is possible.
+
+Deviations and decisions:
+
+- **Environment**: Docker Hub pulls were still hung, so the compose `e2e` service (official
+  `mcr.microsoft.com/playwright:v1.63.0-noble`, left unchanged as the long-term runner) couldn't be
+  pulled. The suite was verified with the locally built `flip-web-pw:scratch` image (Node 22.22,
+  Chromium 1243, which matches `@playwright/test` 1.63.0): `docker run --rm --ipc=host -v
+  "$PWD/web":/app/web -v /app/web/node_modules -w /app/web flip-web-pw:scratch sh -c "npm ci &&
+  npx playwright test"`. Web `npm test` and `npm run typecheck` ran in the same image. API `npm test`
+  (295) and `typecheck` ran via `docker compose run --rm api`. Run `docker compose --profile e2e run
+  --rm e2e` once pulls work.
+- **Chromium only**: all three projects use Chromium, including `mobile-390` (`isMobile`, `hasTouch`,
+  DPR 3). That is the engine in the image, and the checks read Chromium's own accessibility tree over
+  CDP (`axNode` in `e2e/fixtures.ts`). WebKit and real iOS Safari aren't covered (see "Needs a human").
+- **Service workers** are blocked in the config (`serviceWorkers: 'block'`), because a registered SW
+  would fetch `/api/**` outside `page.route`. `offline.spec.ts` re-enables them and mocks at the
+  context level.
+- **S15 "unsupported"**: with `navigator.mediaDevices` undefined, the contract says the Scan button
+  isn't rendered, so that case is asserted as "no Scan button, and the UNCERTAIN suggestion degrades to
+  text". The *unsupported* panel is reached by a `getUserMedia` rejection that isn't a
+  permission/device error (`TypeError`). *Denied* (`NotAllowedError`) and *no camera* (`NotFoundError`)
+  are covered too, plus the live viewfinder, driven by a blank canvas `captureStream()` rather than a
+  camera.
+- **Animations**: `settle()` waits for every finite animation (the 150 ms entrance) to finish before
+  axe runs. S2 is also run under `reducedMotion: 'reduce'`. The reduced-motion rule
+  (`* { transition-duration: 0.01ms }` with the default `transition-property: all`) still creates
+  0.01 ms transitions, so the check is "no animation longer than 1 ms" rather than "zero animation
+  objects".
+- **Camera stop timing**: Chromium hides a closed `<dialog>` and restores focus synchronously, but
+  dispatches `close` (where the app aborts the scan) as a queued task. Measured: the tracks end about
+  15 ms after Escape. The test polls with a 500 ms bound. This is not a defect.
+- **Target sizes**: the check is 44×44 for every visible `button, a, input, summary, select`. Links
+  inside a `<p>` are exempt as inline prose links, but must still be 24 px tall (the WCAG 2.5.8 AA floor).
+
+Defects found by the suite and fixed in `web/src/`:
+
+1. **Label in name (WCAG 2.5.3), Recent entries.** The explicit `aria-label` "… +$22.07 profit,
+   checked 3:42 PM" inserted a word ("checked") that isn't in the visible text ("+$22.07 profit · 3:42
+   PM"), so a speech user saying the visible text wouldn't match. Fix: the visible meta now reads
+   "· checked 3:42 PM" (`RecentList.tsx`), so the name starts with the visible text word for word.
+   This is a small visual addition to S13, and the S13 name pattern is unchanged. Unit assertion added.
+2. **S12 saved note skipped by screen readers.** "Checked … Saved result, not refreshed." sits above
+   the verdict heading, i.e. *before* the focus target in reading order, so a screen-reader user landing
+   on the heading never heard that the result was stale. Fix: when `savedAt` is set, the heading has
+   `aria-describedby` pointing at the note (`VerdictBanner.tsx`). Chromium exposes it as the heading's
+   description. Unit assertions added.
+3. **S8 link target 20 px tall.** "Your recent lookups are still here." is the panel's only action, but
+   it was a bare inline link, 20 px tall, under the 24 px AA floor and far under the 44 px project bar.
+   Fix: `.error-panel .link` is `inline-flex` with `min-block-size: var(--target)` (`app.css`).
+
+Flagged concerns, each with an explicit test:
+
+- *Verdict focus → reason*: the reason is the heading's next sibling and is exposed in the tree (all
+  fixtures, `core.spec`). The eyebrow also precedes the heading, but it repeats the label's meaning, so
+  it's left as is. The S12 note is now conveyed through the description (fix 2).
+- *Label in name*: every visible control in a populated S12/UNCERTAIN screen has a Chromium-computed
+  name that starts with its visible text (fix 1). The icon-only Settings button (< 1024 px) is named
+  "Settings", and the Edit button is "Edit minimum profit".
+- *UNCERTAIN `<details>`*: Chromium exposes `expanded: false`, then `true` after Enter on the summary.
+- *S8 `#recent`*: `#recent` is a `region` named "Recent" containing the h2 "Recent". Keyboard activation
+  of the link moves focus there, scrolls it into view, and the next Tab stays inside Recent. Sensible.
+- *Entrance animation / themes*: see "Animations" above. Every matrix state runs in light and dark, and
+  S2–S6 also run under forced colors.
+- *Native `<dialog>`s*: settings (Escape, Tab trap, focus return to either opener), clear-history
+  (Cancel focused, Escape returns focus to Clear history, confirming focuses the Recent heading),
+  scanner fallbacks and viewfinder (first control focused, Escape returns focus to Scan, "Type it
+  instead" focuses the input, the camera stops). All pass in real Chromium.
+
+Needs a human (not automatable here): VoiceOver on a real iPhone (iOS Safari/WebKit) and NVDA/JAWS on
+Windows, especially whether the heading's `aria-describedby` (S12) is spoken on programmatic focus, and
+the reading order after focus lands on the verdict; real-camera scanning and iOS permission prompts; the
+iOS on-screen keyboard against the fixed Scan bar; and a real 400% browser zoom (emulated here as
+320 CSS px at 1×).
