@@ -32,6 +32,13 @@ export class RateLimiter {
   private readonly lookupDailyCap: number;
   private readonly ebayDailyCallBudget: number;
   private readonly cooldownMs: number;
+  /**
+   * UTC day start of the last lookup seen. When a lookup arrives on a new day,
+   * perClient is cleared wholesale rather than letting it grow forever — memory
+   * is bounded by today's distinct callers, and the clear is amortised O(1)
+   * (once per day) rather than a per-request cost (research R6).
+   */
+  private currentDay = 0;
 
   constructor(options: RateLimiterOptions) {
     this.lookupDailyCap = options.lookupDailyCap;
@@ -48,6 +55,13 @@ export class RateLimiter {
   tryConsumeLookup(clientId: string): boolean {
     const now = Date.now();
     const windowStart = utcDayStart(now);
+    if (windowStart !== this.currentDay) {
+      // A new UTC day: every entry in the map belongs to a day that's over,
+      // so the whole map is stale. Clearing it (not sweeping entry-by-entry)
+      // keeps this O(1) regardless of how many distinct callers came by.
+      this.perClient.clear();
+      this.currentDay = windowStart;
+    }
     let counter = this.perClient.get(clientId);
     if (!counter || counter.windowStart !== windowStart) {
       counter = { count: 0, windowStart };
@@ -56,6 +70,11 @@ export class RateLimiter {
     if (counter.count >= this.lookupDailyCap) return false;
     counter.count += 1;
     return true;
+  }
+
+  /** Distinct callers tracked today — bounded by SC-007, not ever-growing. */
+  get trackedClientCount(): number {
+    return this.perClient.size;
   }
 
   hasEbayBudget(): boolean {

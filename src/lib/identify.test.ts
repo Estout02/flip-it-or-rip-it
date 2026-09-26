@@ -96,3 +96,31 @@ describe('identify — title path (US2)', () => {
     expect(query.cacheKey).toBe('gtin:9780345391803');
   });
 });
+
+describe('identify — fallbackCacheKey (US3, research R2)', () => {
+  it('builds gtin:<digits>|title:<normalized> when both identifier and title are given', () => {
+    const query = identify({ identifier: '9780345391803', title: '  Hitchhiker  Guide ' });
+    expect(query.fallbackCacheKey).toBe('gtin:9780345391803|title:hitchhiker guide');
+  });
+
+  it('is absent for a barcode-only query', () => {
+    const query = identify({ identifier: '9780345391803' });
+    expect(query.fallbackCacheKey).toBeUndefined();
+  });
+
+  it('is absent for a title-only query', () => {
+    const query = identify({ title: 'Chrono Trigger SNES' });
+    expect(query.fallbackCacheKey).toBeUndefined();
+  });
+
+  it('normalizes the title half identically to the standalone title: key', () => {
+    const withBoth = identify({ identifier: '9780345391803', title: 'CHRONO  Trigger\tSNES ' });
+    const titleOnly = identify({ title: 'CHRONO  Trigger\tSNES ' });
+    expect(withBoth.fallbackCacheKey).toBe(`gtin:9780345391803|${titleOnly.cacheKey}`);
+  });
+
+  it('uses the converted ISBN-13 digits, not the raw ISBN-10, in the key', () => {
+    const query = identify({ identifier: '0-345-39180-2', title: 'Hitchhiker Guide' });
+    expect(query.fallbackCacheKey).toBe('gtin:9780345391803|title:hitchhiker guide');
+  });
+});

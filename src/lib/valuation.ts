@@ -10,7 +10,16 @@ export interface Valuation {
   /** Prices of the MATCHED listings (≤50), not the cheapest overall. */
   samplePricesCents: number[];
   sampleSize: number;
+  /** Raw marketplace `total` for the search that produced these listings. */
   activeListingCount: number;
+  /**
+   * The figure liquidity actually consumes. GTIN: equals activeListingCount
+   * (eBay already constrained the search to one product). Title: the raw total
+   * scaled down by how dominant the matched group was, floored at the number of
+   * matched listings actually seen — filtered-out merchandise no longer counts
+   * as competition (research R1).
+   */
+  competingSupplyCount: number;
   pricingBasis: PricingBasis;
   /** Representative title of the matched group — lets users spot a bad match. */
   matchedTitle: string | null;
@@ -139,15 +148,31 @@ export function assessMatch(
  * A sampleSize-0 valuation is a legitimate "no market data" result and is still
  * cached: a barcode with no listings stays no-market for the TTL, saving quota.
  */
+export interface ComputeValuationOptions {
+  /**
+   * Skip the barcode search entirely and go straight to the title search
+   * (research R2): used when the pipeline already knows, from a cached empty
+   * `gtin:` entry, that the barcode itself has nothing to offer, and only the
+   * per-title fallback needs computing. With no title to fall back to, returns
+   * emptyBarcodeValuation() without making any call.
+   */
+  skipBarcodeSearch?: boolean;
+}
+
 export async function computeValuation(
   query: ItemQuery,
   client: EbayBrowseClient,
   /** Optional so the 8 existing call sites keep compiling (analysis F3). */
   matchConfig: MatchConfig = MATCH_DEFAULTS,
+  options: ComputeValuationOptions = {},
 ): Promise<Valuation> {
   let result: SearchResult;
   let sourcedFrom: 'gtin' | 'title';
-  if (query.kind === 'gtin') {
+  if (options.skipBarcodeSearch) {
+    if (query.titleQuery === undefined) return emptyBarcodeValuation();
+    result = await client.search({ title: query.titleQuery });
+    sourcedFrom = 'title';
+  } else if (query.kind === 'gtin') {
     result = await client.search({ gtin: query.gtin! });
     sourcedFrom = 'gtin';
     if (result.listings.length === 0 && query.titleQuery !== undefined) {
@@ -163,6 +188,7 @@ export async function computeValuation(
   let samplePricesCents: number[];
   let matchedTitle: string | null;
   let match: ProductMatch;
+  let competingSupplyCount: number;
 
   if (sourcedFrom === 'gtin') {
     // eBay already constrained these to one product — behaviour unchanged (FR-005).
@@ -180,6 +206,8 @@ export async function computeValuation(
       confidence: 'HIGH',
       filtered: false,
     };
+    // eBay already constrained this search to one product — no scaling needed.
+    competingSupplyCount = result.totalActive;
   } else {
     const matched = selectMatchedGroup(result.listings);
     // Relevance order is preserved by not price-sorting title searches, so the
@@ -193,16 +221,55 @@ export async function computeValuation(
       ...assessed,
       filtered: true,
     };
+    // Floor at matched.length: handles both dominance rounding to 0 on a tiny
+    // matched group, and eBay reporting a total smaller than the sample seen.
+    competingSupplyCount = Math.max(
+      matched.length,
+      Math.round(result.totalActive * assessed.dominanceShare),
+    );
   }
 
   return {
     samplePricesCents,
     sampleSize: samplePricesCents.length,
     activeListingCount: result.totalActive,
+    competingSupplyCount,
     pricingBasis: 'ADJUSTED_ASKING_PRICE',
     matchedTitle,
     match,
     sourcedFrom,
     computedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * The cacheable answer for "this barcode has no listings on eBay" (research
+ * R2 / data-model.md). Given its own function so every call site that needs to
+ * write this exact shape — the barcode search itself, and the pipeline's cache
+ * ladder when a full valuation resolves via the title fallback — agrees on it.
+ */
+export function emptyBarcodeValuation(): Valuation {
+  return {
+    samplePricesCents: [],
+    sampleSize: 0,
+    activeListingCount: 0,
+    competingSupplyCount: 0,
+    pricingBasis: 'ADJUSTED_ASKING_PRICE',
+    matchedTitle: null,
+    match: {
+      categoryId: null,
+      categoryName: null,
+      dominanceShare: 1,
+      dispersionRatio: 1,
+      confidence: 'HIGH',
+      filtered: false,
+    },
+    sourcedFrom: 'gtin',
+    computedAt: new Date().toISOString(),
+  };
+}
+
+/** A barcode search that came back with nothing — the cache-ladder trigger for the title fallback. */
+export function isEmptyBarcodeValuation(valuation: Valuation): boolean {
+  return valuation.sourcedFrom === 'gtin' && valuation.sampleSize === 0;
 }

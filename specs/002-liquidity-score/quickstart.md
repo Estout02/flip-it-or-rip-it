@@ -52,7 +52,7 @@ Sandbox data is thin, so treat this as a **shape** check, not a gate check:
 
 ```bash
 curl -s -X POST localhost:3000/api/lookup -H 'content-type: application/json' \
-  -d '{"title":"Chrono Trigger SNES","costBasis":0}' | jq
+  -d '{"title":"Chrono Trigger SNES","costBasisCents":0}' | jq
 ```
 
 Expected: 200 carrying the new fields — `liquidityTier`, `reasonCode`, `reason` — alongside the

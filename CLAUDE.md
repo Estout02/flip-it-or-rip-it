@@ -51,12 +51,29 @@ verdict step. Zero competing listings reads as UNPROVEN and never gates in eithe
 the only code that touches the real sandbox is the opt-in smoke script:
 `docker compose run --rm api npx tsx scripts/sandbox-smoke.ts`. New env vars (see `.env.example`):
 `EBAY_MARKETPLACE_ID`, `EBAY_FEE_RATE`, `SHIPPING_FLAT_CENTS`, `VALUATION_CACHE_TTL_HOURS`,
-`LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`, plus the liquidity knobs
+`LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`, `TRUST_PROXY`, plus the liquidity knobs
 `LIQUIDITY_STRONG_MAX_LISTINGS`, `LIQUIDITY_MODERATE_MAX_LISTINGS`,
 `LIQUIDITY_RISKY_MARGIN_MULTIPLIER`, `VALUATION_REALIZATION_RATE`, and the match thresholds
 `MATCH_MIN_DOMINANCE_HIGH`, `MATCH_MIN_DOMINANCE_MEDIUM`, `MATCH_MAX_DISPERSION_HIGH`,
 `MATCH_MAX_DISPERSION_MEDIUM`. The phone frontend (likely iOS-first) comes later and
 will consume this API.
+
+Spec `specs/005-backend-hardening/` closes gaps found after 004: the per-client daily cap now
+tracks the connecting socket address unless `TRUST_PROXY` is explicitly set (a hop count or a
+comma list of trusted proxy IPs/CIDRs) — previously `trustProxy: true` trusted every hop, letting
+`X-Forwarded-For` reset anyone's cap at will. Liquidity for title searches now reads
+`competingSupplyCount` (the raw active-listing total scaled by match dominance, floored at the
+matched listings seen) rather than the raw total, which otherwise counted filtered-out
+merchandise as competition; the response carries both that figure and the raw
+`rawActiveListingCount`. Barcode lookups with a title fallback get a per-title cached answer (key
+`gtin:<digits>|title:<normalized title>`) instead of the fallback being hidden behind the
+barcode's own cache entry for the whole TTL. Identical concurrent lookups for the same cache key
+now coalesce into one in-flight computation, so a burst of requests for one item costs one
+eBay call, not one per request. Request bodies are strict — an unknown field (e.g. a misspelled
+`costBasis`) is rejected with 400 naming the field, rather than silently ignored — and every
+numeric server setting (`LOOKUP_DAILY_CAP`, `EBAY_FEE_RATE`, `PORT`, etc.) is range-validated with
+a `console.warn` + fallback on an invalid value. The per-client rate-limiter map is cleared once
+per UTC day rather than growing forever.
 
 ## Stack
 
@@ -105,7 +122,7 @@ Quick smoke test:
 ```bash
 curl localhost:3000/health
 curl -X POST localhost:3000/api/lookup -H 'content-type: application/json' \
-  -d '{"title":"Chrono Trigger SNES","costBasis":0}'
+  -d '{"title":"Chrono Trigger SNES","costBasisCents":0}'
 ```
 
 ## Configuration

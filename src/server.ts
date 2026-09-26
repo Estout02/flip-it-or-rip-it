@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { isIP } from 'node:net';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import { TtlCache } from './lib/cache.js';
 import { RateLimiter } from './lib/rate-limit.js';
@@ -30,6 +31,13 @@ export interface AppConfig {
   realizationRate: number;
   match: MatchConfig;
   port: number;
+  /**
+   * Fastify's `trustProxy` option, straight through. `false` (the default) means
+   * request.ip is the connecting socket address; forwarding headers are ignored.
+   * Parsed from TRUST_PROXY by parseTrustProxy in T010 — hard-coded false here
+   * for now so the bypass is closed even before that parser lands (research R3).
+   */
+  trustProxy: false | number | string;
 }
 
 /**
@@ -114,23 +122,104 @@ function loadMatchConfig(env: NodeJS.ProcessEnv): MatchConfig {
   return candidate;
 }
 
+/** IPv4 prefixes run 0–32; IPv6 prefixes run 0–128 (research R3). */
+function isValidAddressOrCidr(entry: string): boolean {
+  if (entry === '') return false;
+  const slashIndex = entry.indexOf('/');
+  const address = slashIndex === -1 ? entry : entry.slice(0, slashIndex);
+  const version = isIP(address);
+  if (version === 0) return false;
+  if (slashIndex === -1) return true;
+  const prefixRaw = entry.slice(slashIndex + 1);
+  if (!/^\d+$/.test(prefixRaw)) return false;
+  const prefix = Number(prefixRaw);
+  const maxPrefix = version === 4 ? 32 : 128;
+  return prefix >= 0 && prefix <= maxPrefix;
+}
+
+/**
+ * Fastify's `trustProxy: true` trusts every hop, which turns request.ip into
+ * the leftmost (client-controlled) X-Forwarded-For entry — the per-client cap
+ * bypass this spec closes. So `true` is rejected here right alongside actual
+ * garbage: the only way to trust a proxy is to name it, by hop count or by
+ * address/CIDR (research R3).
+ */
+export function parseTrustProxy(raw: string | undefined): false | number | string {
+  const trimmed = (raw ?? '').trim();
+  if (trimmed === '' || trimmed === 'false') return false;
+
+  if (/^\d+$/.test(trimmed) && Number(trimmed) >= 1) {
+    return Number(trimmed);
+  }
+
+  const entries = trimmed.split(',').map((s) => s.trim());
+  if (entries.every(isValidAddressOrCidr)) {
+    return entries.join(',');
+  }
+
+  console.warn(
+    `Invalid TRUST_PROXY ${JSON.stringify(raw)} — falling back to false (forwarding headers ignored).`,
+  );
+  return false;
+}
+
+/**
+ * One validation path for every scalar env-driven setting (research R4): unset
+ * keeps the default silently; present-but-invalid warns (naming the var and
+ * the raw value, matching the existing liquidity/match/realization-rate
+ * warnings) and still falls back to the default rather than shipping NaN or an
+ * out-of-range number into the hot path.
+ */
+function numericSetting(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+  isValid: (n: number) => boolean,
+): number {
+  const raw = env[name];
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !isValid(n)) {
+    console.warn(`Invalid ${name} ${JSON.stringify(raw)} — falling back to ${fallback}.`);
+    return fallback;
+  }
+  return n;
+}
+
+const isPositiveInteger = (n: number): boolean => Number.isInteger(n) && n >= 1;
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  // Env keeps hours/dollars for founder convenience; converted to ms/cents
+  // exactly once, after validation, below.
+  const cacheTtlHours = numericSetting(env, 'VALUATION_CACHE_TTL_HOURS', 24, (n) => n > 0);
+  const profitThresholdDollars = numericSetting(
+    env,
+    'PROFIT_THRESHOLD_DEFAULT',
+    10,
+    (n) => n >= 0,
+  );
+
   return {
     ebayEnv: env.EBAY_ENV === 'production' ? 'production' : 'sandbox',
     ebayClientId: env.EBAY_CLIENT_ID ?? '',
     ebayClientSecret: env.EBAY_CLIENT_SECRET ?? '',
     marketplaceId: env.EBAY_MARKETPLACE_ID ?? 'EBAY_US',
-    feeRate: Number(env.EBAY_FEE_RATE ?? 0.1325),
-    shippingFlatCents: Number(env.SHIPPING_FLAT_CENTS ?? 500),
-    cacheTtlMs: Number(env.VALUATION_CACHE_TTL_HOURS ?? 24) * 3_600_000,
-    lookupDailyCap: Number(env.LOOKUP_DAILY_CAP ?? 50),
-    ebayDailyCallBudget: Number(env.EBAY_DAILY_CALL_BUDGET ?? 2500),
-    // Env keeps dollars for founder convenience; converted to cents exactly once here.
-    defaultProfitThresholdCents: Math.round(Number(env.PROFIT_THRESHOLD_DEFAULT ?? 10) * 100),
+    feeRate: numericSetting(env, 'EBAY_FEE_RATE', 0.1325, (n) => n >= 0 && n < 1),
+    shippingFlatCents: numericSetting(
+      env,
+      'SHIPPING_FLAT_CENTS',
+      500,
+      (n) => Number.isInteger(n) && n >= 0,
+    ),
+    cacheTtlMs: cacheTtlHours * 3_600_000,
+    lookupDailyCap: numericSetting(env, 'LOOKUP_DAILY_CAP', 50, isPositiveInteger),
+    ebayDailyCallBudget: numericSetting(env, 'EBAY_DAILY_CALL_BUDGET', 2500, isPositiveInteger),
+    defaultProfitThresholdCents: Math.round(profitThresholdDollars * 100),
     liquidity: loadLiquidityConfig(env),
     realizationRate: loadRealizationRate(env),
     match: loadMatchConfig(env),
-    port: Number(env.PORT ?? 3000),
+    port: numericSetting(env, 'PORT', 3000, (n) => Number.isInteger(n) && n >= 1 && n <= 65535),
+    trustProxy: parseTrustProxy(env.TRUST_PROXY),
   };
 }
 
@@ -149,6 +238,10 @@ const lookupBodySchema = {
     costBasisCents: { type: 'integer', minimum: 0 },
     profitThresholdCents: { type: 'integer', minimum: 0 },
   },
+  // A misspelled field (e.g. costBasis instead of costBasisCents) must be
+  // REJECTED, not silently ignored — silently ignoring it produced a wrong
+  // answer with no signal to the caller (research R7).
+  additionalProperties: false,
 } as const;
 
 export function buildApp(
@@ -156,11 +249,39 @@ export function buildApp(
   options: { logger?: boolean } = {},
 ): FastifyInstance {
   const { config, rateLimiter } = deps;
-  // trustProxy so request.ip is the real client behind compose/prod proxies.
-  const app = Fastify({ logger: options.logger ?? true, trustProxy: true });
+  // trustProxy comes straight from config: false unless the operator explicitly
+  // configured TRUST_PROXY, so request.ip cannot be spoofed via X-Forwarded-For
+  // by default (research R3 — closes the per-client cap bypass).
+  const app = Fastify({
+    logger: options.logger ?? true,
+    // Fastify's own .d.ts omits `number` from trustProxy's type even though
+    // it's accepted at runtime (proxy-addr's hop-count form) — a known gap in
+    // Fastify's types, not a loosening of our own: AppConfig.trustProxy stays
+    // `false | number | string`, matching data-model.md exactly.
+    trustProxy: config.trustProxy as boolean | string | undefined,
+    // Fastify's own default is removeAdditional: true, which would silently
+    // STRIP unknown fields and still answer 200 — exactly the bug this schema
+    // exists to close. Without this override, additionalProperties: false on
+    // the schema above does nothing (research R7).
+    ajv: { customOptions: { removeAdditional: false } },
+  });
 
   app.setErrorHandler((err: FastifyError, request, reply) => {
-    if (err.validation !== undefined || err instanceof ValidationError) {
+    if (err.validation !== undefined) {
+      const additionalPropertyError = err.validation.find(
+        (entry) => entry.keyword === 'additionalProperties',
+      );
+      if (additionalPropertyError !== undefined) {
+        const fieldName = (additionalPropertyError.params as { additionalProperty?: string })
+          .additionalProperty;
+        return reply.code(400).send({
+          error: 'validation',
+          message: `Unknown field "${fieldName}". Allowed: identifier, title, costBasisCents, profitThresholdCents.`,
+        });
+      }
+      return reply.code(400).send({ error: 'validation', message: err.message });
+    }
+    if (err instanceof ValidationError) {
       return reply.code(400).send({ error: 'validation', message: err.message });
     }
     if (err instanceof EbayUnavailableError) {

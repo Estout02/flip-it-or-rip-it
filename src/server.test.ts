@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, loadConfig, type AppConfig } from './server.js';
 import { LIQUIDITY_DEFAULTS, REALIZATION_RATE_DEFAULT } from './lib/verdict.js';
@@ -81,6 +81,7 @@ const testConfig: AppConfig = {
   realizationRate: 1,
   match: MATCH_DEFAULTS,
   port: 0,
+  trustProxy: false,
 };
 
 let cleanup: Array<() => void | Promise<void>> = [];
@@ -107,8 +108,19 @@ afterEach(async () => {
   cleanup = [];
 });
 
-function lookup(app: FastifyInstance, payload: object, remoteAddress = '10.0.0.1') {
-  return app.inject({ method: 'POST', url: '/api/lookup', payload, remoteAddress });
+function lookup(
+  app: FastifyInstance,
+  payload: object,
+  remoteAddress = '10.0.0.1',
+  headers?: Record<string, string>,
+) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/lookup',
+    payload,
+    remoteAddress,
+    ...(headers !== undefined ? { headers } : {}),
+  });
 }
 
 describe('POST /api/lookup — US1 barcode verdict', () => {
@@ -534,7 +546,13 @@ describe('POST /api/lookup — liquidity honesty (US3)', () => {
       totalActive: 0,
     };
     const { app } = makeApp({ client: new FakeBrowseClient(() => soleSeller) });
-    const body = (await lookup(app, { title: 'Sole Listing' })).json();
+    // A GTIN search, not a title search (spec 005 deviation): for a title search
+    // the matched listing itself is competing supply, so competingSupplyCount is
+    // now floored at 1 (research R1) and this exact fixture would read STRONG,
+    // not UNPROVEN. A GTIN result isn't floored — competingSupplyCount tracks
+    // the raw total directly — so it's the fixture that still legitimately
+    // exercises "eBay reports zero total despite returning a listing".
+    const body = (await lookup(app, { identifier: '9780345391803' })).json();
     expect(body.liquidityTier).toBe('UNPROVEN');
     expect(body.verdict).toBe('FLIP');
   });
@@ -758,5 +776,229 @@ describe('POST /api/lookup — uncertain match (US3)', () => {
     expect(body.verdict).toBe('UNCERTAIN');
     expect(body.reasonCode).toBe('LOW_MATCH_CONFIDENCE');
     expect(body.estimatedValueCents).toBeGreaterThan(0); // figures still present
+  });
+});
+
+// ---- spec 005: liquidity reads the item's own supply (US1) ----
+
+/**
+ * 20 in the dominant category (all priced identically, so dispersion stays
+ * HIGH) plus 20 spread evenly across 5 merchandise categories (4 each) — the
+ * dominant group can never be mistaken for one of them. Dominance lands at
+ * exactly 0.5 (MEDIUM); dispersion stays HIGH. The worse of the two is MEDIUM,
+ * so the verdict is not UNCERTAIN — this fixture is about liquidity, not match
+ * confidence.
+ */
+const MIXED_SUPPLY_MARKET: SearchResult = {
+  listings: [
+    ...Array.from({ length: 20 }, (_, i) => ({
+      title: `Chrono Trigger SNES listing ${i}`,
+      priceCents: 4000,
+      leafCategoryId: '139973',
+      leafCategoryName: 'Video Games',
+    })),
+    ...Array.from({ length: 5 }, (_, cat) =>
+      Array.from({ length: 4 }, (_, i) => ({
+        title: `Merch ${cat}-${i}`,
+        priceCents: 600 + i,
+        leafCategoryId: `merch-${cat}`,
+        leafCategoryName: `Merchandise ${cat}`,
+      })),
+    ).flat(),
+  ],
+  totalActive: 80,
+};
+
+describe('caller identity', () => {
+  it('ignores X-Forwarded-For by default, so spoofing it cannot dodge the cap', async () => {
+    const { app } = makeApp({ config: { lookupDailyCap: 3 } });
+
+    for (let i = 0; i < 3; i++) {
+      const res = await lookup(app, { identifier: '9780345391803' }, '10.0.0.1', {
+        'x-forwarded-for': `203.0.113.${i}`,
+      });
+      expect(res.statusCode).toBe(200);
+    }
+    const fourth = await lookup(app, { identifier: '9780345391803' }, '10.0.0.1', {
+      'x-forwarded-for': '203.0.113.99',
+    });
+    expect(fourth.statusCode).toBe(429);
+  });
+
+  it('honors X-Forwarded-For from a trusted proxy — each forwarded address is its own caller', async () => {
+    const { app } = makeApp({ config: { lookupDailyCap: 3, trustProxy: '10.0.0.1' } });
+
+    for (let i = 0; i < 4; i++) {
+      const res = await lookup(app, { identifier: '9780345391803' }, '10.0.0.1', {
+        'x-forwarded-for': `203.0.113.${i}`,
+      });
+      expect(res.statusCode).toBe(200);
+    }
+  });
+
+  it('ignores X-Forwarded-For from an untrusted address even when TRUST_PROXY is set', async () => {
+    const { app } = makeApp({ config: { lookupDailyCap: 3, trustProxy: '10.0.0.1' } });
+
+    for (let i = 0; i < 3; i++) {
+      const res = await lookup(app, { identifier: '9780345391803' }, '10.9.9.9', {
+        'x-forwarded-for': `203.0.113.${i}`,
+      });
+      expect(res.statusCode).toBe(200);
+    }
+    const fourth = await lookup(app, { identifier: '9780345391803' }, '10.9.9.9', {
+      'x-forwarded-for': '203.0.113.99',
+    });
+    expect(fourth.statusCode).toBe(429);
+  });
+});
+
+describe('loadConfig — numeric settings', () => {
+  it.each([
+    ['LOOKUP_DAILY_CAP', 'lookupDailyCap', '7', 7],
+    ['EBAY_DAILY_CALL_BUDGET', 'ebayDailyCallBudget', '100', 100],
+    ['EBAY_FEE_RATE', 'feeRate', '0', 0],
+    ['SHIPPING_FLAT_CENTS', 'shippingFlatCents', '0', 0],
+    ['VALUATION_CACHE_TTL_HOURS', 'cacheTtlMs', '0.5', 1_800_000],
+    ['PROFIT_THRESHOLD_DEFAULT', 'defaultProfitThresholdCents', '12.5', 1250],
+    ['PORT', 'port', '8080', 8080],
+  ] as const)('%s=%s is read into config.%s', (envVar, field, raw, expected) => {
+    const config = loadConfig({ [envVar]: raw });
+    expect(config[field]).toBe(expected);
+  });
+
+  it.each([
+    ['LOOKUP_DAILY_CAP', 'abc'],
+    ['LOOKUP_DAILY_CAP', '0'],
+    ['LOOKUP_DAILY_CAP', '-5'],
+    ['LOOKUP_DAILY_CAP', '2.5'],
+    ['EBAY_DAILY_CALL_BUDGET', 'x'],
+    ['EBAY_DAILY_CALL_BUDGET', '0'],
+    ['EBAY_FEE_RATE', '1'],
+    ['EBAY_FEE_RATE', '-0.1'],
+    ['EBAY_FEE_RATE', 'abc'],
+    ['SHIPPING_FLAT_CENTS', '-1'],
+    ['SHIPPING_FLAT_CENTS', '4.5'],
+    ['SHIPPING_FLAT_CENTS', 'x'],
+    ['VALUATION_CACHE_TTL_HOURS', '0'],
+    ['VALUATION_CACHE_TTL_HOURS', '-1'],
+    ['VALUATION_CACHE_TTL_HOURS', 'x'],
+    ['PROFIT_THRESHOLD_DEFAULT', '-1'],
+    ['PROFIT_THRESHOLD_DEFAULT', 'x'],
+    ['PORT', '0'],
+    ['PORT', '70000'],
+    ['PORT', 'x'],
+  ])('invalid %s=%s warns (naming the var) and falls back to the default', (envVar, raw) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    loadConfig({ [envVar]: raw });
+    expect(warn).toHaveBeenCalled();
+    expect(warn.mock.calls.some((call) => String(call[0]).includes(envVar))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('keeps every default silently when nothing is set', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const config = loadConfig({});
+    expect(warn).not.toHaveBeenCalled();
+    expect(config.lookupDailyCap).toBe(50);
+    expect(config.ebayDailyCallBudget).toBe(2500);
+    expect(config.feeRate).toBe(0.1325);
+    expect(config.shippingFlatCents).toBe(500);
+    expect(config.cacheTtlMs).toBe(86_400_000);
+    expect(config.defaultProfitThresholdCents).toBe(1000);
+    expect(config.port).toBe(3000);
+    warn.mockRestore();
+  });
+});
+
+describe('loadConfig — TRUST_PROXY', () => {
+  it.each([
+    [undefined, false],
+    ['', false],
+    ['false', false],
+    ['1', 1],
+    ['2', 2],
+    ['10.0.0.1', '10.0.0.1'],
+    ['10.0.0.0/8, 192.168.1.1', '10.0.0.0/8,192.168.1.1'],
+    ['::1', '::1'],
+    ['fd00::/8', 'fd00::/8'],
+  ])('parses TRUST_PROXY %j as %j', (raw, expected) => {
+    const env = raw === undefined ? {} : { TRUST_PROXY: raw };
+    expect(loadConfig(env).trustProxy).toEqual(expected);
+  });
+
+  it.each(['true', '0', '-1', '1.5', 'banana', '10.0.0.1/33', '10.0.0.1,nope'])(
+    'rejects invalid TRUST_PROXY %j, warns, and falls back to false',
+    (raw) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(loadConfig({ TRUST_PROXY: raw }).trustProxy).toBe(false);
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    },
+  );
+});
+
+describe('POST /api/lookup — strict request bodies (US5, research R7)', () => {
+  it('rejects a misspelled field (costBasis instead of costBasisCents) with 400 naming it', async () => {
+    const { app, client } = makeApp();
+    const res = await lookup(app, { title: 'x', costBasis: 0 });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error).toBe('validation');
+    expect(body.message).toContain('costBasis');
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it('rejects any unknown field, naming it, even alongside valid fields', async () => {
+    const { app } = makeApp();
+    const res = await lookup(app, { title: 'x', costBasisCents: 0, extra: 1 });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().message).toContain('extra');
+  });
+
+  it('accepts a valid body with all four allowed fields', async () => {
+    const { app } = makeApp();
+    const res = await lookup(app, {
+      identifier: '9780345391803',
+      title: 'Chrono Trigger SNES',
+      costBasisCents: 100,
+      profitThresholdCents: 500,
+    });
+
+    expect(res.statusCode).toBe(200);
+  });
+});
+
+describe('POST /api/lookup — burst traffic costs one marketplace call (US4)', () => {
+  it('10 concurrent lookups from distinct callers make exactly one eBay call, all 200', async () => {
+    const { app, client } = makeApp();
+
+    const promises = Array.from({ length: 10 }, (_, i) =>
+      lookup(app, { title: 'Chrono Trigger SNES' }, `10.0.0.${i + 1}`),
+    );
+    const responses = await Promise.all(promises);
+
+    for (const res of responses) expect(res.statusCode).toBe(200);
+    expect(client.calls).toHaveLength(1);
+  });
+});
+
+describe('POST /api/lookup — competing supply drives liquidity, not raw total (US1)', () => {
+  it('scales the raw total by dominance for a title search (MODERATE, not WEAK)', async () => {
+    const { app } = makeApp({ client: new FakeBrowseClient(() => MIXED_SUPPLY_MARKET) });
+    const body = (await lookup(app, { title: 'Chrono Trigger SNES' })).json();
+
+    expect(body.matchConfidence).not.toBe('LOW');
+    expect(body.rawActiveListingCount).toBe(80);
+    expect(body.competingSupplyCount).toBe(40); // round(80 × 0.5)
+    expect(body.liquidityTier).toBe('MODERATE'); // raw 80 would have been WEAK
+    expect(body.verdict).toBe('FLIP');
+  });
+
+  it('a GTIN lookup keeps competingSupplyCount equal to the raw total', async () => {
+    const { app } = makeApp();
+    const body = (await lookup(app, { identifier: '9780345391803' })).json();
+    expect(body.competingSupplyCount).toBe(body.rawActiveListingCount);
   });
 });

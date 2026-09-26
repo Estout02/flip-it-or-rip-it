@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { computeValuation } from './valuation.js';
+import {
+  computeValuation,
+  emptyBarcodeValuation,
+  isEmptyBarcodeValuation,
+  MATCH_DEFAULTS,
+} from './valuation.js';
 import { identify } from './identify.js';
 import type { EbayBrowseClient, SearchResult } from './ebay/types.js';
 
@@ -249,5 +254,131 @@ describe('computeValuation — match confidence (US2)', () => {
     expect(valuation.match.filtered).toBe(false);
     expect(valuation.match.confidence).toBe('HIGH');
     expect(valuation.match.categoryId).toBeNull();
+  });
+});
+
+// ---- spec 005: competing-supply figure for liquidity (US1, research R1) ----
+
+describe('competingSupplyCount', () => {
+  it('title search: dominance-scaled raw total (dominance 0.2, total 500 → 100)', async () => {
+    // 2 matched (GAMES) out of 10 returned priced listings → dominance 0.2.
+    const listings = [
+      catListing(9000, ...GAMES),
+      catListing(9100, ...GAMES),
+      ...Array.from({ length: 8 }, (_, i) => catListing(100 + i, `cat-${i}`, `Category ${i}`)),
+    ];
+    const valuation = await computeValuation(
+      titleQuery,
+      fakeClient({ listings, totalActive: 500 }),
+    );
+    expect(valuation.match.dominanceShare).toBeCloseTo(0.2);
+    expect(valuation.competingSupplyCount).toBe(100);
+    expect(valuation.activeListingCount).toBe(500);
+  });
+
+  it('GTIN search: competingSupplyCount equals the raw total', async () => {
+    const listings = Array.from({ length: 10 }, (_, i) => listing(1000 + i * 10));
+    const valuation = await computeValuation(gtinQuery, fakeClient({ listings, totalActive: 500 }));
+    expect(valuation.competingSupplyCount).toBe(500);
+    expect(valuation.activeListingCount).toBe(500);
+  });
+
+  it('title search: matched group is all listings → equals total', async () => {
+    const listings = Array.from({ length: 20 }, (_, i) => catListing(9000 + i, ...GAMES));
+    const valuation = await computeValuation(
+      titleQuery,
+      fakeClient({ listings, totalActive: 20 }),
+    );
+    expect(valuation.match.dominanceShare).toBe(1);
+    expect(valuation.competingSupplyCount).toBe(20);
+    expect(valuation.activeListingCount).toBe(20);
+  });
+
+  it('floors at the matched count when eBay reports a total smaller than the sample (3 vs 8)', async () => {
+    // All 8 returned listings are the matched group, but eBay's reported total is 3.
+    const listings = Array.from({ length: 8 }, (_, i) => catListing(9000 + i, ...GAMES));
+    const valuation = await computeValuation(titleQuery, fakeClient({ listings, totalActive: 3 }));
+    expect(valuation.competingSupplyCount).toBe(8);
+    expect(valuation.activeListingCount).toBe(3);
+  });
+
+  it('floors at the matched count when dominance scaling rounds to 0', async () => {
+    // 1 matched out of 10 returned → dominance 0.1; total 4 → round(4×0.1)=0.
+    const listings = [
+      catListing(9000, ...GAMES),
+      ...Array.from({ length: 9 }, (_, i) => catListing(100 + i, `cat-${i}`, `Category ${i}`)),
+    ];
+    const valuation = await computeValuation(titleQuery, fakeClient({ listings, totalActive: 4 }));
+    expect(Math.round(4 * valuation.match.dominanceShare)).toBe(0);
+    expect(valuation.competingSupplyCount).toBe(1);
+    expect(valuation.activeListingCount).toBe(4);
+  });
+
+  it('is 0 when every listing is unpriced (no matched group at all)', async () => {
+    const listings = [catListing(0, ...GAMES), catListing(0, ...GAMES), catListing(0, ...GAMES)];
+    const valuation = await computeValuation(titleQuery, fakeClient({ listings, totalActive: 50 }));
+    expect(valuation.sampleSize).toBe(0);
+    expect(valuation.competingSupplyCount).toBe(0);
+    expect(valuation.activeListingCount).toBe(50);
+  });
+});
+
+// ---- spec 005: barcode + title fallback cache ladder (US3, research R2) ----
+
+describe('computeValuation — skipBarcodeSearch (US3)', () => {
+  it('makes exactly one call — the title search — for a gtin query with a title', async () => {
+    const fallbackQuery = identify({ identifier: '9780345391803', title: 'Chrono Trigger SNES' });
+    const client = fakeClient(contaminatedResult());
+
+    const valuation = await computeValuation(fallbackQuery, client, MATCH_DEFAULTS, {
+      skipBarcodeSearch: true,
+    });
+
+    expect(client.calls).toEqual([{ title: 'Chrono Trigger SNES' }]);
+    expect(valuation.sourcedFrom).toBe('title');
+  });
+
+  it('returns the empty barcode valuation, without calling, when there is no title to fall back to', async () => {
+    const client = fakeClient({ listings: [], totalActive: 0 });
+
+    const valuation = await computeValuation(gtinQuery, client, MATCH_DEFAULTS, {
+      skipBarcodeSearch: true,
+    });
+
+    expect(client.calls).toHaveLength(0);
+    expect(valuation).toEqual(emptyBarcodeValuation());
+  });
+});
+
+describe('emptyBarcodeValuation / isEmptyBarcodeValuation (US3)', () => {
+  it('matches the shape in data-model.md', () => {
+    const v = emptyBarcodeValuation();
+    expect(v.samplePricesCents).toEqual([]);
+    expect(v.sampleSize).toBe(0);
+    expect(v.activeListingCount).toBe(0);
+    expect(v.competingSupplyCount).toBe(0);
+    expect(v.sourcedFrom).toBe('gtin');
+    expect(v.matchedTitle).toBeNull();
+    expect(v.match).toEqual({
+      categoryId: null,
+      categoryName: null,
+      dominanceShare: 1,
+      dispersionRatio: 1,
+      confidence: 'HIGH',
+      filtered: false,
+    });
+    expect(Date.parse(v.computedAt)).not.toBeNaN();
+  });
+
+  it('is recognized by isEmptyBarcodeValuation, and a real gtin result is not', async () => {
+    expect(isEmptyBarcodeValuation(emptyBarcodeValuation())).toBe(true);
+    const real = await computeValuation(gtinQuery, fakeClient({ listings: [listing(1000)], totalActive: 1 }));
+    expect(isEmptyBarcodeValuation(real)).toBe(false);
+  });
+
+  it('does not mistake an empty TITLE valuation for an empty barcode one', async () => {
+    const empty = await computeValuation(titleQuery, fakeClient({ listings: [], totalActive: 0 }));
+    expect(empty.sourcedFrom).toBe('title');
+    expect(isEmptyBarcodeValuation(empty)).toBe(false);
   });
 });

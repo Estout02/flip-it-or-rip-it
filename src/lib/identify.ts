@@ -18,6 +18,13 @@ export interface ItemQuery {
   titleQuery?: string;
   /** `gtin:<digits>` or `title:<normalized title>` (FR-011). */
   cacheKey: string;
+  /**
+   * `gtin:<digits>|title:<normalized title>` — present only when both a valid
+   * barcode and a title were given. Keys the per-title fallback answer so a
+   * barcode unknown to eBay doesn't hide the title search behind the barcode's
+   * cache lifetime, and each title gets its own fallback (research R2).
+   */
+  fallbackCacheKey?: string;
 }
 
 export interface IdentifyInput {
@@ -89,6 +96,9 @@ export function identify(input: IdentifyInput): ItemQuery {
       gtin,
       ...(titleQuery !== undefined ? { titleQuery } : {}),
       cacheKey: `gtin:${gtin}`,
+      ...(titleQuery !== undefined
+        ? { fallbackCacheKey: `gtin:${gtin}|title:${normalizeTitle(titleQuery)}` }
+        : {}),
     };
   }
 
