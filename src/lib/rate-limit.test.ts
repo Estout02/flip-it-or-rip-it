@@ -62,6 +62,29 @@ describe('RateLimiter', () => {
     });
   });
 
+  describe('bounded per-caller memory (US5, research R6)', () => {
+    it('tracks 10,000 distinct clients, then clears at UTC midnight', () => {
+      const limiter = make();
+      for (let i = 0; i < 10_000; i++) {
+        limiter.tryConsumeLookup(`client-${i}`);
+      }
+      expect(limiter.trackedClientCount).toBe(10_000);
+
+      vi.setSystemTime(new Date('2026-07-08T00:00:01Z'));
+      limiter.tryConsumeLookup('new-client');
+      expect(limiter.trackedClientCount).toBe(1);
+    });
+
+    it("resets a day-1 client's count at the day boundary (cap consumable again)", () => {
+      const limiter = make({ lookupDailyCap: 1 });
+      expect(limiter.tryConsumeLookup('a')).toBe(true);
+      expect(limiter.tryConsumeLookup('a')).toBe(false);
+
+      vi.setSystemTime(new Date('2026-07-08T00:00:01Z'));
+      expect(limiter.tryConsumeLookup('a')).toBe(true);
+    });
+  });
+
   describe('cooldown', () => {
     it('is off by default', () => {
       expect(make().inCooldown()).toBe(false);
