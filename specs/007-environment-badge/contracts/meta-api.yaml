@@ -1,0 +1,57 @@
+openapi: 3.1.0
+info:
+  title: Flip It or Rip It — Client Meta API
+  version: 0.2.0
+  description: >
+    Configuration the web client needs to render honestly without hard-coding server
+    settings. Local config only — zero eBay calls, not counted against the per-client
+    lookup cap. The lookup endpoint itself is specified in
+    specs/005-backend-hardening/contracts/lookup-api.yaml (0.6.0), unchanged.
+
+    CHANGES FROM 0.1.0 (spec 007): added required `ebayEnv`; Cache-Control is now
+    `no-cache` (was max-age=300) so an operator's environment switch is reflected on
+    the next page load rather than up to 5 minutes later.
+paths:
+  /api/meta:
+    get:
+      summary: Client-facing service settings
+      responses:
+        '200':
+          description: Current settings
+          headers:
+            Cache-Control:
+              schema: { type: string, const: 'no-cache' }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [defaultProfitThresholdCents, lookupDailyCap, marketplaceId, ebayEnv]
+                properties:
+                  defaultProfitThresholdCents:
+                    type: integer
+                    minimum: 0
+                    description: Threshold applied when a lookup omits profitThresholdCents.
+                  lookupDailyCap:
+                    type: integer
+                    minimum: 1
+                    description: Lookups per client address per UTC day.
+                  marketplaceId:
+                    type: string
+                    examples: [EBAY_US]
+                  ebayEnv:
+                    type: string
+                    enum: [production, sandbox]
+                    description: >
+                      Which eBay environment answers lookups. Clients show a "Test data"
+                      indicator for anything other than production (spec 007).
+              example: { defaultProfitThresholdCents: 1000, lookupDailyCap: 50, marketplaceId: EBAY_US, ebayEnv: sandbox }
+  /:
+    get:
+      summary: Web client (production only)
+      description: >
+        Served from WEB_DIST_DIR (default web/dist) only when a built index.html exists.
+        HTML carries the CSP from research R8 and Cache-Control no-cache; hashed assets
+        under /assets/ carry public, max-age=31536000, immutable.
+      responses:
+        '200': { description: index.html }
