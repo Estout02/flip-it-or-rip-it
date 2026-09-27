@@ -1,12 +1,16 @@
-// Layout (T036 layout.spec): three columns on desktop, one on phones, the fixed Scan bar never
-// hides the focused element (WCAG 2.4.11), 400% zoom reflow (1.4.10), and reduced motion.
+// Layout (T036 layout.spec, rewritten by T053/T065 for spec 008): three columns on desktop
+// (unchanged — 006 US5), one sheet on phones (the fixed Scan dock is gone), the sheet never covers
+// the focused element (WCAG 2.4.11), 400% zoom reflow (1.4.10), reduced motion, and the desktop
+// pane-only rules (no grabber, no history entry, Escape does nothing).
 import type { Page } from '@playwright/test';
 import {
   expect,
   expectNoHorizontalScroll,
   gotoApp,
   lookupFixture,
+  lookupSequence,
   mockApi,
+  resultSheet,
   test,
   THEMES,
 } from './fixtures';
@@ -26,9 +30,45 @@ const intersects = (a: Box, b: Box) =>
 async function populated(page: Page) {
   await mockApi(page);
   await gotoApp(page);
-  await lookupFixture(page, 'flip');
-  await lookupFixture(page, 'rip');
-  await lookupFixture(page, 'uncertain');
+  await lookupSequence(page, ['flip', 'rip', 'uncertain']);
+}
+
+/** Tabs from the top of the document, recording every stop's box, until it wraps around. */
+async function tabWalk(page: Page): Promise<{ stops: number; sheetCovers: string[] }> {
+  await page.evaluate(() => {
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.body.removeAttribute('tabindex');
+  });
+
+  const seen = new Set<string>();
+  const sheetCovers: string[] = [];
+  let stops = 0;
+  for (let i = 0; i < 80; i++) {
+    await page.keyboard.press('Tab');
+    const info = await page.evaluate(() => {
+      const a = document.activeElement as HTMLElement | null;
+      if (!a || a === document.body) return null;
+      a.dataset.e2eStop ??= String(Math.random());
+      const r = a.getBoundingClientRect();
+      const sheet = document.querySelector('.col-result .sheet')!.getBoundingClientRect();
+      return {
+        key: a.dataset.e2eStop,
+        label: (a.getAttribute('aria-label') ?? a.textContent ?? a.id).trim().slice(0, 40),
+        isSheet: !!a.closest('.col-result .sheet'),
+        el: { x: r.x, y: r.y, width: r.width, height: r.height },
+        sheet: { x: sheet.x, y: sheet.y, width: sheet.width, height: sheet.height },
+      };
+    });
+    if (!info) break;
+    if (seen.has(info.key)) break; // wrapped around
+    seen.add(info.key);
+    stops++;
+    // An element that lives inside the sheet is naturally inside its own box; only a stop
+    // outside the sheet being covered by it is the WCAG 2.4.11 violation this test is for.
+    if (!info.isSheet && intersects(info.el, info.sheet)) sheetCovers.push(info.label);
+  }
+  return { stops, sheetCovers };
 }
 
 for (const colorScheme of THEMES) {
@@ -49,60 +89,68 @@ for (const colorScheme of THEMES) {
       await expectNoHorizontalScroll(page);
     });
 
-    test('phones: one column, and the Scan bar never covers the focused element', async ({ page }, info) => {
-      test.skip(info.project.name === 'desktop-1280', 'the Scan bar is fixed below 1024 px only');
+    test('desktop: the sheet is a pane — no grabber, not fixed, Escape does nothing, no history entry', async ({
+      page,
+    }, info) => {
+      test.skip(info.project.name !== 'desktop-1280', 'desktop layout only');
       await populated(page);
-      const [l, r, c] = await Promise.all([box(page, '.col-lookup'), box(page, '.col-result'), box(page, '.col-recent')]);
-      expect(r.y).toBeGreaterThanOrEqual(l.y + l.height);
-      expect(c.y).toBeGreaterThanOrEqual(r.y + r.height);
-      expect(Math.abs(l.x - r.x)).toBeLessThan(1);
+      const sheet = resultSheet(page);
+      await expect(sheet).toHaveClass(/sheet--pane/);
+      await expect(sheet.locator('.sheet__grabber')).toHaveCount(0);
+      const position = await sheet.evaluate((el) => getComputedStyle(el).position);
+      expect(position).not.toBe('fixed');
 
+      const before = await sheet.locator('#result-heading').textContent();
+      const historyLength = await page.evaluate(() => history.length);
+      await page.keyboard.press('Escape');
+      await expect(sheet.locator('#result-heading')).toHaveText(before ?? '');
+      expect(await page.evaluate(() => history.length)).toBe(historyLength);
+    });
+
+    test('the sheet never covers the focused element (WCAG 2.4.11)', async ({ page }, info) => {
+      test.skip(info.project.name === 'desktop-1280', 'the sheet is a fixed bottom sheet below 1024 px only');
+      await populated(page);
       // Open the rough-figures disclosure so the Tab walk passes through more content.
       await page.locator('.rough > summary').click();
-      await page.evaluate(() => {
-        document.body.tabIndex = -1;
-        document.body.focus();
-        document.body.removeAttribute('tabindex');
-      });
 
-      const seen = new Set<string>();
-      let stops = 0;
-      for (let i = 0; i < 80; i++) {
-        await page.keyboard.press('Tab');
-        const info2 = await page.evaluate(() => {
-          const a = document.activeElement as HTMLElement | null;
-          if (!a || a === document.body) return null;
-          a.dataset.e2eStop ??= String(Math.random());
-          const r = a.getBoundingClientRect();
-          const d = document.querySelector('.scan-dock')!.getBoundingClientRect();
-          return {
-            key: a.dataset.e2eStop,
-            label: (a.getAttribute('aria-label') ?? a.textContent ?? a.id).trim().slice(0, 40),
-            isDock: a.classList.contains('scan-dock'),
-            el: { x: r.x, y: r.y, width: r.width, height: r.height },
-            dock: { x: d.x, y: d.y, width: d.width, height: d.height },
-          };
-        });
-        if (!info2) break;
-        if (seen.has(info2.key)) break; // wrapped around
-        seen.add(info2.key);
-        stops++;
-        if (!info2.isDock) {
-          expect(intersects(info2.el, info2.dock), `Scan bar covers "${info2.label}"`).toBe(false);
-        }
-      }
+      const { stops, sheetCovers } = await tabWalk(page);
+      expect(sheetCovers, `sheet covered: ${sheetCovers.join(', ')}`).toEqual([]);
       expect(stops).toBeGreaterThan(10);
     });
 
-    test('400% zoom (320 CSS px at 1×): no horizontal scroll in any main state', async ({ page }, info) => {
+    test('the sheet never covers the focused element with the on-screen keyboard open', async ({ page }, info) => {
+      test.skip(info.project.name === 'desktop-1280', 'no on-screen keyboard emulation at desktop');
+      await populated(page);
+      await page.locator('.rough > summary').click();
+      await page.evaluate(() => document.documentElement.style.setProperty('--kb-inset', '300px'));
+
+      const { stops, sheetCovers } = await tabWalk(page);
+      expect(sheetCovers, `sheet covered: ${sheetCovers.join(', ')}`).toEqual([]);
+      expect(stops).toBeGreaterThan(10);
+    });
+
+    test('400% zoom (320 CSS px at 1×): no horizontal scroll opening the sheet, a disclosure, Recent and Settings', async ({
+      page,
+    }, info) => {
       test.skip(info.project.name !== 'desktop-1280', '1280 / 4 = 320: emulated from the desktop project');
       await page.setViewportSize({ width: 320, height: 200 });
       await populated(page);
       await expectNoHorizontalScroll(page);
       await page.locator('.rough > summary').click();
       await expectNoHorizontalScroll(page);
-      await page.locator('#recent .recent-item').nth(1).click();
+
+      await page.getByRole('button', { name: 'Recent' }).click();
+      await expect(page.locator('dialog[open] #recent-heading')).toBeVisible();
       await expectNoHorizontalScroll(page);
+      const recentDialog = page.locator('dialog[open].recent-sheet');
+      // The sheet scrolls internally rather than clipping content at this width (FR-005, SC-005).
+      const overflowsInternally = await recentDialog.evaluate(
+        (el) => el.scrollHeight >= el.clientHeight && getComputedStyle(el).overflowY !== 'hidden',
+      );
+      expect(overflowsInternally).toBe(true);
+      await recentDialog.locator('.recent-item').nth(1).click();
+      await expectNoHorizontalScroll(page);
+
       await page.getByRole('button', { name: 'Settings' }).click();
       await expect(page.getByRole('dialog', { name: 'Your settings' })).toBeVisible();
       await expectNoHorizontalScroll(page);
@@ -115,7 +163,7 @@ for (const colorScheme of THEMES) {
       await mockApi(page);
       await gotoApp(page);
       await lookupFixture(page, 'flip');
-      const timing = await page.locator('.result-enter').evaluate((el) => {
+      const timing = await resultSheet(page).evaluate((el) => {
         const cs = getComputedStyle(el);
         const secs = (v: string) => Math.max(...v.split(',').map((s) => parseFloat(s) * (s.trim().endsWith('ms') ? 0.001 : 1)));
         return {

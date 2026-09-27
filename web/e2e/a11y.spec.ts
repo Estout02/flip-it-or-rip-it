@@ -1,26 +1,39 @@
-// Accessibility matrix (T036 a11y.spec), the acceptance bar in contracts/ui-states.md
-// "Accessibility checks per state": for every state S0–S15 reachable without a camera, at
-// each project width, in light and dark (and forced colors for S2–S6):
+// Accessibility matrix (T036 a11y.spec, rewritten by T050–T052 for spec 008), the acceptance bar
+// in contracts/sheet-states.md "Accessibility acceptance (per state)": for every state S0–S15 and
+// N1–N6 reachable without a camera decode loop, at each project width, in light and dark (and
+// forced colors for the result states):
 //   1. axe (wcag2a/2aa/21aa/22aa) → 0 violations, measured after the entrance animation ends
-//   2. no horizontal scroll
-//   3. the state's focus target is document.activeElement
-//   4. every visible interactive target ≥ 44×44 (inline prose links exempt)
-// Then explicit tests for the concerns flagged during implementation.
+//   2. no `color-contrast` entry in axe's `incomplete` (states with no live <video>; camera states
+//      get a second pass with the video hidden — research R5)
+//   3. no horizontal scroll
+//   4. the state's focus target is document.activeElement
+//   5. every visible interactive target ≥ 44×44 (inline prose links exempt)
+//   6. every chrome element's background-color has alpha 1 (camera states)
+// Then explicit tests for the concerns flagged during implementation, and the SC-006/FR-018 quartet
+// distinctness checks.
 import type { Page } from '@playwright/test';
 import {
   axNode,
+  blackCamera,
   ERRORS,
   expect,
+  expectChromeOpaque,
   expectNoAxeViolations,
+  expectNoIncompleteContrast,
   expectStateAccessible,
+  emulateReducedTransparency,
   fakeCamera,
+  fakeDetector,
   gotoApp,
   input,
   isDesktop,
+  LABELS,
   lookupFixture,
+  lookupSequence,
   mockApi,
-  noMediaDevices,
-  QUERIES,
+  openRecent,
+  recentItems,
+  resultSheet,
   rejectCamera,
   resultHeading,
   scanButton,
@@ -28,6 +41,7 @@ import {
   submitQuery,
   test,
   THEMES,
+  withVideoHidden,
   words,
   type FixtureName,
 } from './fixtures';
@@ -41,6 +55,13 @@ type State = {
   /** CSS selector of the expected document.activeElement; 'default' = the browser default. */
   focus: string | 'default' | ((page: Page) => string);
   forced?: boolean;
+  /** A live viewfinder is present: run the video-hidden contrast pass and expectChromeOpaque. */
+  camera?: boolean;
+  /** Not applicable at some project widths (e.g. N6 has no on-screen keyboard at desktop). */
+  skipIf?: (page: Page) => boolean;
+  skipReason?: string;
+  /** Extra per-state assertions beyond the generic accessibility bar. */
+  extra?: (page: Page) => Promise<void>;
 };
 
 const result = (name: FixtureName, extra?: (p: Page) => Promise<void>) => async (page: Page) => {
@@ -141,10 +162,9 @@ const STATES: State[] = [
     enter: async (page) => {
       await mockApi(page);
       await gotoApp(page);
-      await lookupFixture(page, 'flip');
-      await lookupFixture(page, 'uncertain');
-      await lookupFixture(page, 'noMarket');
-      await page.locator('#recent .recent-item').nth(2).click();
+      await lookupSequence(page, ['flip', 'uncertain', 'noMarket']);
+      await openRecent(page);
+      await recentItems(page).nth(2).click();
       await expect(page.locator('.verdict__saved')).toBeVisible();
     },
     focus: '#result-heading',
@@ -155,10 +175,13 @@ const STATES: State[] = [
       await mockApi(page);
       await gotoApp(page);
       await lookupFixture(page, 'rip');
+      await openRecent(page);
       await page.getByRole('button', { name: 'Clear history' }).click();
-      await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Clear all recent lookups on this device?' })).toBeVisible();
     },
-    focus: 'dialog[open] .btn:not(.btn--primary)',
+    // Below 1024 px the confirm dialog sits atop the still-open Recent sheet dialog — disambiguate
+    // by the confirm's own class rather than a bare `dialog[open]`, which would match both.
+    focus: 'dialog.dialog--small[open] .btn:not(.btn--primary)',
   },
   {
     id: 'S13 storage unavailable',
@@ -166,9 +189,11 @@ const STATES: State[] = [
     enter: async (page) => {
       await mockApi(page);
       await gotoApp(page);
-      await expect(page.getByText("Recent lookups can't be saved in this browser.")).toBeVisible();
+      // `getByText` would also match the live-region announcement of the same sentence; the
+      // visible notice is the actual UI surface (`.recent__notice`).
+      await expect(page.locator('.recent__notice')).toHaveText("Recent lookups can't be saved in this browser.");
       await lookupFixture(page, 'flip');
-      await expect(page.locator('#recent .recent-item')).toHaveCount(1);
+      await expect(recentItems(page)).toHaveCount(1);
     },
     focus: '#result-heading',
   },
@@ -195,15 +220,17 @@ const STATES: State[] = [
     focus: '#threshold-input',
   },
   {
-    id: 'S15 scanner viewfinder (canvas stream, no camera)',
+    id: 'S15 viewfinder',
     before: fakeCamera,
     enter: async (page) => {
       await mockApi(page);
       await gotoApp(page);
       await scanButton(page).click();
-      await expect(page.getByRole('dialog', { name: 'Point at a barcode' })).toBeVisible();
+      await expect(page.locator('.ground--camera video')).toBeVisible();
+      await expect(page.locator('.pill')).toHaveText('Point at a barcode');
     },
-    focus: '.scanner__cancel',
+    focus: 'button:text-is("Cancel")',
+    camera: true,
   },
   ...(
     [
@@ -213,17 +240,134 @@ const STATES: State[] = [
     ] as const
   ).map(
     ([label, err]): State => ({
-      id: `S15 scanner ${label}`,
+      id: `S15 camera unavailable (${label})`,
       before: (page) => rejectCamera(page, err),
       enter: async (page) => {
         await mockApi(page);
         await gotoApp(page);
         await scanButton(page).click();
-        await expect(page.getByRole('dialog', { name: 'Camera not available' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Camera not available' })).toBeVisible();
       },
-      focus: '.scanner__failed .btn',
+      focus: 'button:text-is("Type it instead")',
     }),
   ),
+  {
+    id: 'N1 resting over static',
+    enter: async (page) => {
+      await mockApi(page);
+      await gotoApp(page);
+    },
+    focus: (page) => (isDesktop(page) ? '#lookup-input' : 'default'),
+    extra: async (page) => {
+      await expect(page.locator('video')).toHaveCount(0);
+      await expect(page.locator('.viewfinder__reticle')).toHaveCount(0);
+      await expect(page.locator('.pill')).toHaveCount(0);
+    },
+  },
+  {
+    id: 'N2 resting over live viewfinder',
+    before: fakeCamera,
+    enter: async (page) => {
+      await mockApi(page);
+      await gotoApp(page);
+      await scanButton(page).click();
+      await expect(page.locator('.ground--camera video')).toBeVisible();
+    },
+    focus: 'button:text-is("Cancel")',
+    camera: true,
+  },
+  {
+    id: 'N3 result over live viewfinder',
+    before: async (page) => {
+      await blackCamera(page);
+      await fakeDetector(page, ['9780345391803']);
+    },
+    enter: async (page) => {
+      await mockApi(page);
+      await gotoApp(page);
+      await scanButton(page).click();
+      await expect(resultHeading(page)).toHaveText(LABELS.risky, { timeout: 10_000 });
+    },
+    focus: '#result-heading',
+    forced: true,
+    camera: true,
+  },
+  {
+    id: 'N4 Recent over a result',
+    enter: async (page) => {
+      await mockApi(page);
+      await gotoApp(page);
+      await lookupFixture(page, 'flip');
+      if (!isDesktop(page)) await openRecent(page);
+    },
+    // At ≥ 1024 px Recent is a permanent column, not an overlay over the result — there is no
+    // dialog to open, so this state degrades to asserting the column is there (contracts N4 note).
+    focus: (page) => (isDesktop(page) ? '#result-heading' : 'dialog[open] #recent-heading'),
+    extra: async (page) => {
+      if (isDesktop(page)) await expect(page.locator('#recent')).toBeVisible();
+    },
+  },
+  {
+    id: 'N5 opaque fallback',
+    before: async (page) => {
+      await blackCamera(page);
+      await fakeDetector(page, ['9780345391803']);
+    },
+    enter: async (page) => {
+      await mockApi(page);
+      await gotoApp(page);
+      await scanButton(page).click();
+      await expect(resultHeading(page)).toHaveText(LABELS.risky, { timeout: 10_000 });
+      await emulateReducedTransparency(page, true);
+    },
+    focus: '#result-heading',
+    camera: true,
+    extra: async (page) => {
+      const measure = () =>
+        resultSheet(page).evaluate((el) => {
+          const cs = getComputedStyle(el);
+          const m = /rgba?\(([^)]+)\)/.exec(cs.backgroundColor);
+          const parts = m ? m[1]!.split(',').map((s) => parseFloat(s)) : [];
+          return { alpha: parts.length === 4 ? parts[3]! : 1, backdrop: cs.backdropFilter };
+        });
+      const reduced = await measure();
+      expect(reduced.alpha, 'sheet background alpha under reduced transparency').toBe(1);
+      expect(reduced.backdrop === 'none' || reduced.backdrop === '', `backdrop-filter: ${reduced.backdrop}`).toBe(
+        true,
+      );
+
+      await emulateReducedTransparency(page, false);
+      const restored = await measure();
+      expect(restored.backdrop, 'the glass returns once the preference clears (FR-019)').not.toBe('none');
+
+      // Leave the page in the state this test is named for, for the video-hidden contrast pass.
+      await emulateReducedTransparency(page, true);
+    },
+  },
+  {
+    id: 'N6 keyboard open',
+    enter: async (page) => {
+      await mockApi(page);
+      await gotoApp(page);
+      await page.evaluate(() => document.documentElement.style.setProperty('--kb-inset', '300px'));
+      await input(page).focus();
+    },
+    focus: '#lookup-input',
+    skipIf: isDesktop,
+    skipReason: 'no on-screen keyboard emulation at desktop (contracts N6 note)',
+    extra: async (page) => {
+      const inputBox = await input(page).boundingBox();
+      const sheetBox = await resultSheet(page).boundingBox();
+      const viewport = page.viewportSize()!;
+      expect(inputBox).toBeTruthy();
+      expect(sheetBox).toBeTruthy();
+      expect(inputBox!.y).toBeGreaterThanOrEqual(sheetBox!.y);
+      expect(inputBox!.y + inputBox!.height, 'input bottom stays above the keyboard inset').toBeLessThanOrEqual(
+        sheetBox!.y + sheetBox!.height,
+      );
+      expect(inputBox!.y + inputBox!.height, 'input stays inside the viewport').toBeLessThanOrEqual(viewport.height);
+    },
+  },
 ];
 
 async function expectFocus(page: Page, state: State) {
@@ -242,16 +386,29 @@ for (const colorScheme of THEMES) {
 
     for (const state of STATES) {
       test(state.id, async ({ page }) => {
+        if (state.skipIf?.(page)) test.skip(true, state.skipReason);
         await state.before?.(page);
         await state.enter(page);
         await expectFocus(page, state);
+        await state.extra?.(page);
         await expectStateAccessible(page, `${state.id} / ${colorScheme}`);
         // Running axe must not have moved focus either.
         await expectFocus(page, state);
+        if (state.camera) {
+          // FR-016: chrome stays legible over a live camera feed at every alpha.
+          await expectChromeOpaque(page);
+          // axe reports contrast as merely "incomplete" over a live <video> (research R5); hiding
+          // it composites the sheet over the #000 ground, turning the worst case into a fact.
+          await withVideoHidden(page, async () => {
+            await expectNoAxeViolations(page, `${state.id} (video hidden) / ${colorScheme}`);
+            await expectNoIncompleteContrast(page);
+          });
+        }
       });
 
       if (state.forced) {
         test(`${state.id} — forced colors`, async ({ page }) => {
+          if (state.skipIf?.(page)) test.skip(true, state.skipReason);
           await page.emulateMedia({ forcedColors: 'active' });
           await state.before?.(page);
           await state.enter(page);
@@ -280,6 +437,61 @@ for (const colorScheme of THEMES) {
   });
 }
 
+// ---- SC-006 / FR-018: the four verdicts must differ, and read as different in forced colors ----
+
+test.describe('verdict distinctness (SC-006, FR-018)', () => {
+  test('four distinct labels, four distinct icons; UNCERTAIN capsule is dashed, the others solid', async ({
+    page,
+  }) => {
+    await mockApi(page);
+    await gotoApp(page);
+    const seen: Array<{ name: FixtureName; label: string; icon: string; borderStyle: string }> = [];
+    for (const name of ['flip', 'risky', 'rip', 'uncertain'] as const) {
+      await lookupFixture(page, name);
+      const label = (await resultHeading(page).textContent())?.trim() ?? '';
+      const icon = (await page.locator('.capsule__icon').getAttribute('data-icon')) ?? '';
+      const borderStyle = await page.locator('.capsule').evaluate((el) => getComputedStyle(el).borderStyle);
+      seen.push({ name, label, icon, borderStyle });
+      await page.getByRole('button', { name: 'Check another' }).click();
+      // The clear runs in a post-render effect, not the click itself (desktop keeps
+      // #lookup-input mounted) — wait it out before the next iteration's fill.
+      await expect(input(page)).toHaveValue('');
+    }
+    expect(new Set(seen.map((s) => s.label)).size, 'four distinct labels').toBe(4);
+    expect(new Set(seen.map((s) => s.icon)).size, 'four distinct icons').toBe(4);
+    for (const s of seen) {
+      if (s.name === 'uncertain') expect(s.borderStyle, 'UNCERTAIN capsule is dashed').toBe('dashed');
+      else expect(s.borderStyle, `${s.name} capsule is solid`).toBe('solid');
+    }
+  });
+
+  test('forced colors: the capsule, a chip, buttons, the sheet and a money row keep a visible border', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await mockApi(page);
+    await gotoApp(page);
+    await lookupFixture(page, 'flip');
+    await openRecent(page);
+    const chip = recentItems(page).first().locator('.chip').first();
+    const widths = await Promise.all([
+      page.locator('.capsule').evaluate((el) => parseFloat(getComputedStyle(el).borderWidth)),
+      chip.evaluate((el) => parseFloat(getComputedStyle(el).borderWidth)),
+      resultSheet(page).evaluate((el) => parseFloat(getComputedStyle(el).borderWidth)),
+    ]);
+    for (const w of widths) expect(w).toBeGreaterThanOrEqual(1);
+
+    // `.btn` (not the chrome bar's `.chrome__btn`, which is a different, unbordered class per
+    // R-B) — "Check another" is the primary `.btn.btn--primary` action on this result.
+    const btnWidth = await page
+      .getByRole('button', { name: 'Check another' })
+      .evaluate((el) => parseFloat(getComputedStyle(el).borderWidth));
+    expect(btnWidth).toBeGreaterThanOrEqual(1);
+    const rowWidth = await page.locator('.figures__row').first().evaluate((el) => parseFloat(getComputedStyle(el).borderWidth));
+    expect(rowWidth).toBeGreaterThanOrEqual(1);
+  });
+});
+
 // ---- Flagged concerns (semantics; theme-independent, run once per project) ----
 
 test.describe('flagged concerns', () => {
@@ -293,14 +505,18 @@ test.describe('flagged concerns', () => {
     // The reason is the next thing in reading order and is exposed.
     const reason = await axNode(page, '.verdict__reason');
     expect(reason.ignored).toBe(false);
+    // 008 R-C: the heading is nested inside `.capsule` (dot + icon + label) — the DOM sibling
+    // that immediately follows in reading order is `.capsule`'s own next sibling, not the
+    // heading's (it has none; it's the capsule's last child).
     expect(await page.evaluate(() => {
-      const hd = document.getElementById('result-heading')!;
-      return hd.nextElementSibling?.classList.contains('verdict__reason') ?? false;
+      const capsule = document.getElementById('result-heading')!.closest('.capsule')!;
+      return capsule.nextElementSibling?.classList.contains('verdict__reason') ?? false;
     })).toBe(true);
 
     // S12: the "Saved result, not refreshed" note sits visually above the heading, i.e. before
     // the focus target in reading order. It must still be conveyed when the heading is focused.
-    await page.locator('#recent .recent-item').first().click();
+    await openRecent(page);
+    await recentItems(page).first().click();
     await expect(resultHeading(page)).toBeFocused();
     const saved = await axNode(page, '#result-heading');
     expect(saved.description ?? '').toContain('Saved result, not refreshed.');
@@ -311,10 +527,9 @@ test.describe('flagged concerns', () => {
   }) => {
     await mockApi(page);
     await gotoApp(page);
-    await lookupFixture(page, 'flip');
-    await lookupFixture(page, 'uncertain');
-    await lookupFixture(page, 'noMarket');
-    await page.locator('#recent .recent-item').nth(1).click(); // S12 on UNCERTAIN: most controls
+    await lookupSequence(page, ['flip', 'uncertain', 'noMarket']);
+    await openRecent(page);
+    await recentItems(page).nth(1).click(); // S12 on UNCERTAIN: most controls
 
     const controls = await page.evaluate(() => {
       const out: { idx: number; visible: string }[] = [];
@@ -348,9 +563,11 @@ test.describe('flagged concerns', () => {
     }
     expect(problems).toEqual([]);
 
-    // The icon-only Settings button (< 1024 px) still has the name "Settings"; ≥ 1024 its
-    // visible text is exactly that name.
-    const settings = await axNode(page, '.header__settings');
+    // The chrome Settings button's accessible name is exactly "Settings" (icon + visible text at
+    // every width — the icon-only < 1024 px variant from 006 no longer exists, R-B).
+    // axNode resolves via the browser's native querySelector (CDP), so this must be plain CSS —
+    // no Playwright-only pseudo-classes. `:has()` is standard CSS4, supported natively in Chromium.
+    const settings = await axNode(page, '.chrome__btn:has([data-icon="settings"])');
     expect(settings.name).toBe('Settings');
   });
 
@@ -370,13 +587,19 @@ test.describe('flagged concerns', () => {
     await expect(page.locator('.rough')).toContainText('These figures may be for a different product.');
   });
 
-  test('S8 #recent target is a labelled region with a heading', async ({ page }) => {
+  test('Recent is reachable and is a labelled region with a heading, at every width', async ({ page }) => {
     await mockApi(page);
     await gotoApp(page);
-    const region = await axNode(page, '#recent');
-    expect(region.role).toBe('region');
-    expect(region.name).toBe('Recent');
-    await expect(page.getByRole('region', { name: 'Recent' }).getByRole('heading', { level: 2, name: 'Recent' })).toBeVisible();
+    if (isDesktop(page)) {
+      const region = await axNode(page, '#recent');
+      expect(region.role).toBe('region');
+      expect(region.name).toBe('Recent');
+      await expect(page.getByRole('region', { name: 'Recent' }).getByRole('heading', { level: 2, name: 'Recent' })).toBeVisible();
+    } else {
+      await openRecent(page);
+      await expect(page.getByRole('dialog', { name: 'Recent' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 2, name: 'Recent' })).toBeVisible();
+    }
   });
 
   test('no mediaDevices: the Scan button is not rendered (S15 "unsupported" is shown only after a failure)', async ({
@@ -384,8 +607,10 @@ test.describe('flagged concerns', () => {
   }) => {
     // With navigator.mediaDevices undefined the contract says the Scan button is not rendered
     // at all, so the "unsupported" S15 panel is reached via a getUserMedia failure instead
-    // (covered in the matrix as "S15 scanner unsupported").
-    await noMediaDevices(page);
+    // (covered in the matrix as "S15 camera unavailable (unsupported)").
+    await page.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'mediaDevices', { get: () => undefined, configurable: true });
+    });
     await mockApi(page);
     await gotoApp(page);
     await expect(scanButton(page)).toHaveCount(0);

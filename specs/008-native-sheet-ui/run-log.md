@@ -23,3 +23,6 @@ Orchestrated by `/speckit-orchestrate`. Append-only; one line per phase or packa
 | 2026-09-27 00:13 | implement | WP6 | done | sk-implementer a0ea8c6 | 36 tests (4 files), typecheck clean |
 | 2026-09-27 00:19 | implement | WP7 | done | sk-implementer a7f80f3 | 34/34 ResultPanel tests, typecheck clean |
 | 2026-09-27 00:52 | implement | WP8 | done | sk-implementer a58e091 | 276/276 full suite, 22.8 KB gzip, typecheck clean |
+| 2026-09-27 01:00 | implement | WP9 | done | sk-implementer a83fd4e | 276/276, 22.7 KB gzip, stale-token sweep clean |
+| 2026-09-27 07:12 | implement | WP11 | done | sk-chore a96b67f | CLAUDE.md current-state paragraph, verify 4/4 clauses |
+| 2026-09-27 07:12 | implement | WP10 | in-progress | sk-implementer a631784 | turn limit then session limit (reset 04:50 MDT); matrix had failures under analysis |
