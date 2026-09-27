@@ -2,8 +2,10 @@ import preact from '@preact/preset-vite';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Theme colors mirror --bg in src/styles/tokens.css (light / dark).
-const THEME_LIGHT = '#f7f7f4';
+// The chrome bar owns the top of the screen in both schemes (spec 008), so the manifest gets one
+// fixed theme color rather than a light/dark pair; background mirrors --ground-static (light).
+const THEME_COLOR = '#1C1C1E';
+const BACKGROUND_COLOR = '#F4F4F7';
 
 export default defineConfig({
   plugins: [
@@ -24,8 +26,8 @@ export default defineConfig({
         display: 'standalone',
         start_url: '/',
         scope: '/',
-        theme_color: THEME_LIGHT,
-        background_color: THEME_LIGHT,
+        theme_color: THEME_COLOR,
+        background_color: BACKGROUND_COLOR,
         icons: [
           { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
