@@ -38,6 +38,20 @@
   inline-size: 1.75rem;
   block-size: 1.75rem;
 }
+@media (max-width: 359.98px) {
+  /* Room for the badge at 320 px (spec 007 FR-002): keep the logo mark; the h1's accessible name
+     is unchanged. `EnvBadge` renders nothing at all in production, so `.wordmark` only has an
+     `.env-badge` immediate sibling when the pill is actually present — no separate "badged" class
+     is needed on the header. */
+  .wordmark:has(+ .env-badge) .wordmark__text {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
 .wordmark__flip {
   fill: var(--tint-flip);
 }
@@ -776,33 +790,49 @@ span.suggestion {
   font-size: var(--step--1);
 }
 
-/* Verdict chips (Recent rows): the same quartet as the capsule, at chip scale. */
+/* Verdict chips (Recent rows): the same quartet as the capsule, at chip scale. The label text is
+   always --ink (color-contract rule 2: no tint below 24 px — this chip's text sits at --step--1,
+   well under the threshold, so the tint carries only the fill and the icon, never the label,
+   exactly like the capsule's dot/icon-vs-label split). */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   padding: 0.1rem var(--space-2);
+  border: 1px solid transparent;
   border-radius: var(--radius-pill);
+  color: var(--ink);
   font-size: var(--step--1);
   font-weight: 700;
 }
 .chip--flip {
   background: var(--caps-flip);
+  border-color: var(--tint-flip);
+}
+.chip--flip .icon {
   color: var(--tint-flip);
 }
 .chip--risky {
   background: var(--caps-risky);
+  border-color: var(--tint-risky);
+}
+.chip--risky .icon {
   color: var(--tint-risky);
 }
 .chip--rip {
   background: var(--caps-rip);
+  border-color: var(--tint-rip);
+}
+.chip--rip .icon {
   color: var(--tint-rip);
 }
 .chip--unc {
   background: var(--caps-unc);
+  border-style: dashed;
+  border-color: var(--tint-unc);
+}
+.chip--unc .icon {
   color: var(--tint-unc);
-  outline: 1px dashed var(--tint-unc);
-  outline-offset: -1px;
 }
 /* Test-data chip: the same neutral chrome treatment as the header badge — never the UNCERTAIN
    indigo, so a sandbox-checked row can't be misread as a verdict. */
