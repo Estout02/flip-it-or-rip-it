@@ -107,6 +107,8 @@ describe('LookupForm', () => {
     setup({ onScan: vi.fn() });
     const buttons = screen.getAllByRole('button').map((b) => b.textContent);
     expect(buttons.indexOf('Scan')).toBe(buttons.indexOf('Check') + 1);
+    const scan = screen.getByRole('button', { name: 'Scan' });
+    expect(scan.className).toBe('btn btn--scan');
   });
 
   it('handle: setValue, clear (also clears cost) and focusInput', () => {

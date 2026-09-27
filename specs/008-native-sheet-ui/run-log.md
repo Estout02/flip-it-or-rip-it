@@ -16,3 +16,7 @@ Orchestrated by `/speckit-orchestrate`. Append-only; one line per phase or packa
 | 2026-09-26 20:19 | checkpoint-1 | approved | done | user | build it |
 | 2026-09-26 23:50 | implement | WP2 | done | sk-implementer ac6da3a | 15/15 verdict-copy tests, typecheck clean, commit 0823e08 |
 | 2026-09-26 23:50 | implement | WP1 | failed | sk-implementer a668f84 | session limit (reset 23:50 MDT); nothing tracked written |
+| 2026-09-27 00:05 | implement | WP1 | done | sk-implementer a668f84 | 5/5 contrast, 219/219 full, 20.6 KB, baseline 33.9 ms |
+| 2026-09-27 00:08 | implement | WP5 | done | sk-implementer ad00638 | 31 tests (6+10+15), typecheck clean |
+| 2026-09-27 00:12 | implement | WP4 | done | sk-implementer a7068e9 | 9/9 Sheet tests, build clean |
+| 2026-09-27 00:12 | implement | WP3 | done | sk-implementer ab69ee2 | 22/22 scanner tests, typecheck clean |

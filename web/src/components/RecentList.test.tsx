@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { useState } from 'preact/hooks';
 import { describe, expect, it, vi } from 'vitest';
 import { entryFor, flip, noMarket, risky, uncertain } from '../test/fixtures';
 import { formatCheckedAt } from '../lib/verdict-copy';
@@ -128,6 +129,94 @@ describe('RecentList', () => {
       );
       expect(document.querySelector('.chip--test')).toBeNull();
       expect(document.querySelector('.recent-item')!.getAttribute('aria-label')).toMatch(/^Flip it: /);
+    });
+  });
+
+  describe('presentation="sheet" (R9, below 1024px)', () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button type="button" id="opener" onClick={() => setOpen(true)}>
+            Recent
+          </button>
+          <RecentList
+            history={history}
+            storageOk
+            onSelect={vi.fn()}
+            onClear={vi.fn()}
+            presentation="sheet"
+            open={open}
+            onClose={() => {
+              setOpen(false);
+              document.getElementById('opener')!.focus();
+            }}
+          />
+        </>
+      );
+    }
+
+    it('opens as a modal dialog focused on the Recent heading', async () => {
+      render(<Harness />);
+      const dialog = document.querySelector('dialog.recent-sheet') as HTMLDialogElement;
+      expect(dialog).toBeTruthy();
+      await waitFor(() => expect(dialog.open).toBe(true));
+      await waitFor(() => expect(document.activeElement).toBe(document.getElementById('recent-heading')));
+    });
+
+    it('has the same entries and accessible names as the pane', () => {
+      render(<Harness />);
+      const time = formatCheckedAt(history[0]!.checkedAt);
+      expect(
+        screen.getByRole('button', {
+          name: `Flip it — slow seller: Rare Hardcover First Edition, +$99.10 profit, checked ${time}`,
+        }),
+      ).toBeTruthy();
+    });
+
+    it('renders the same empty state and storage notice as the pane', () => {
+      render(
+        <RecentList
+          history={[]}
+          storageOk={false}
+          onSelect={vi.fn()}
+          onClear={vi.fn()}
+          presentation="sheet"
+          open
+          onClose={vi.fn()}
+        />,
+      );
+      expect(screen.getByText('Items you check will show up here.')).toBeTruthy();
+      expect(screen.getByText("Recent lookups can't be saved in this browser.")).toBeTruthy();
+    });
+
+    it('Clear-history confirm still focuses Cancel first', async () => {
+      render(<Harness />);
+      fireEvent.click(screen.getByRole('button', { name: 'Clear history' }));
+      const confirm = screen.getByRole('dialog', { name: 'Clear all recent lookups on this device?' });
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(true));
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+    });
+
+    it('the Close button closes it and returns focus to the opener', async () => {
+      render(<Harness />);
+      const dialog = document.querySelector('dialog.recent-sheet') as HTMLDialogElement;
+      const opener = document.getElementById('opener')!;
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      await waitFor(() => expect(dialog.open).toBe(false));
+      expect(document.activeElement).toBe(opener);
+    });
+
+    // jsdom's <dialog> polyfill (src/test/setup.ts) implements open/close and the `close` event,
+    // but not the native Escape-to-cancel behaviour real browsers give a modal dialog for free —
+    // SettingsDialog.test.tsx notes the same limitation. Covered for real in e2e/errors.spec.ts.
+    it('closing the dialog (as Escape would, natively) returns focus to the opener', async () => {
+      render(<Harness />);
+      const dialog = document.querySelector('dialog.recent-sheet') as HTMLDialogElement;
+      const opener = document.getElementById('opener')!;
+      dialog.close();
+      await waitFor(() => expect(dialog.open).toBe(false));
+      expect(document.activeElement).toBe(opener);
     });
   });
 });

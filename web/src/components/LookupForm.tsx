@@ -171,7 +171,7 @@ export function LookupForm({ handle, loading, serverError, onFieldEdit, onSubmit
           {loading ? CHECKING : 'Check'}
         </button>
         {onScan && (
-          <button type="button" class="btn btn--scan scan-dock" ref={scanButtonRef} onClick={onScan}>
+          <button type="button" class="btn btn--scan" ref={scanButtonRef} onClick={onScan}>
             <Icon name="scan" />
             Scan
           </button>
