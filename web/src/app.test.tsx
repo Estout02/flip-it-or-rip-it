@@ -1,15 +1,19 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/preact';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadSettings } from './lib/storage';
-import { mockApi, renderApp, typeAndSubmit } from './test/app-harness';
+import { expandSheet, mockApi, renderApp, sheet, typeAndSubmit } from './test/app-harness';
 import { flip, jsonResponse, noMarket, rip } from './test/fixtures';
 
 afterEach(() => vi.unstubAllGlobals());
 
 const heading = (name: string) => screen.findByRole('heading', { level: 2, name });
+// Crossing the resting ↔ expanded boundary re-parents the lookup group (T032's "one ordered
+// block"), unmounting/remounting `<LookupForm>` and its `#lookup-input` — so any assertion on the
+// input made after such a transition must re-query it rather than reuse an old reference.
+const currentInput = () => screen.getByLabelText('Barcode or item name') as HTMLInputElement;
 
 describe('App: core loop (US1, US5)', () => {
-  it('renders landmarks, the h1, a skip link first, and the empty state', () => {
+  it('renders landmarks, the h1, a skip link first, and the empty state in the resting sheet', () => {
     mockApi(() => jsonResponse(flip));
     const { container } = renderApp();
     expect(screen.getByRole('heading', { level: 1, name: 'Flip it or Rip it' })).toBeTruthy();
@@ -18,30 +22,78 @@ describe('App: core loop (US1, US5)', () => {
     const firstFocusable = container.querySelector('a, button, input, summary');
     expect(firstFocusable?.textContent).toBe('Skip to lookup');
     expect(firstFocusable?.getAttribute('href')).toBe('#lookup-input');
-    expect(screen.getByRole('heading', { name: 'Scan or type an item' })).toBeTruthy();
+    expect(sheet(container)?.classList.contains('sheet--resting')).toBe(true);
+    const explainer = screen.getByRole('heading', { name: 'Scan or type an item' });
+    expect(explainer.closest('.sheet--resting')).toBeTruthy();
+    expect(document.title).toBe('Flip it or Rip it');
   });
 
-  it('type → verdict with focus on its heading → Check another empties and focuses the input', async () => {
+  it('type → verdict expands the sheet, focuses its heading → Check another collapses it, resets and focuses the input', async () => {
     const { lookups } = mockApi(() => jsonResponse(flip));
-    const { input } = renderApp();
+    const { container, input } = renderApp();
     typeAndSubmit(input, '9780345391803');
     expect(lookups).toEqual([{ identifier: '9780345391803' }]);
     const h = await heading('Flip it');
+    expect(sheet(container)?.classList.contains('sheet--expanded')).toBe(true);
     await waitFor(() => expect(document.activeElement).toBe(h));
     expect(screen.getByText(/^Estimated from current eBay asking prices/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Check another' }));
-    expect(input.value).toBe('');
-    expect(document.activeElement).toBe(input);
+    expect(sheet(container)?.classList.contains('sheet--resting')).toBe(true);
+    const freshInput = currentInput();
+    expect(freshInput.value).toBe('');
+    expect(document.activeElement).toBe(freshInput);
+    expect(screen.getByRole('heading', { name: 'Scan or type an item' })).toBeTruthy();
   });
 
-  it('S6: "Try the item name instead" focuses the emptied input', async () => {
+  it('S6: "Try the item name instead" collapses the sheet and focuses the emptied input', async () => {
     mockApi(() => jsonResponse(noMarket));
-    const { input } = renderApp();
+    const { container, input } = renderApp();
     typeAndSubmit(input, '9780000000002');
     await heading('Rip it');
     fireEvent.click(screen.getByRole('button', { name: 'Try the item name instead' }));
-    expect(input.value).toBe('');
-    expect(document.activeElement).toBe(input);
+    expect(sheet(container)?.classList.contains('sheet--resting')).toBe(true);
+    const freshInput = currentInput();
+    expect(freshInput.value).toBe('');
+    expect(document.activeElement).toBe(freshInput);
+  });
+
+  it('Escape returns the sheet to resting, clears the input and focuses it, without moving a settled result off screen', async () => {
+    mockApi(() => jsonResponse(flip));
+    const { container, input } = renderApp();
+    await expandSheet(input, 'Chrono Trigger SNES');
+    await heading('Flip it');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(sheet(container)?.classList.contains('sheet--resting')).toBe(true));
+    const freshInput = currentInput();
+    expect(freshInput.value).toBe('');
+    expect(document.activeElement).toBe(freshInput);
+    expect(screen.getByRole('heading', { name: 'Scan or type an item' })).toBeTruthy();
+  });
+
+  it('a result that resolves after dismissal is saved to history but does not re-expand the sheet or move focus', async () => {
+    let resolve!: (r: Response) => void;
+    mockApi(() => new Promise<Response>((r) => (resolve = r)));
+    const { container, input } = renderApp();
+    typeAndSubmit(input, 'Chrono Trigger SNES');
+    await waitFor(() => expect(sheet(container)?.classList.contains('sheet--expanded')).toBe(true));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(sheet(container)?.classList.contains('sheet--resting')).toBe(true));
+    const freshInput = currentInput();
+    expect(document.activeElement).toBe(freshInput);
+    resolve(jsonResponse(flip));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('flip-or-rip:history:v1') ?? '[]')).toHaveLength(1));
+    expect(sheet(container)?.classList.contains('sheet--resting')).toBe(true);
+    expect(document.activeElement).toBe(freshInput);
+  });
+
+  it('the skip link collapses the sheet and focuses the input', async () => {
+    mockApi(() => jsonResponse(flip));
+    const { container, input } = renderApp();
+    await expandSheet(input, 'Chrono Trigger SNES');
+    await heading('Flip it');
+    fireEvent.click(screen.getByText('Skip to lookup'));
+    expect(sheet(container)?.classList.contains('sheet--resting')).toBe(true);
+    expect(document.activeElement).toBe(currentInput());
   });
 });
 
@@ -85,37 +137,57 @@ describe('App: settings and cost (US3, T030)', () => {
 });
 
 describe('App: Recent (US4, T031)', () => {
-  it('selecting a recent entry shows it without a lookup and focuses its heading', async () => {
+  it('selecting a recent entry from the Recent sheet shows it without a lookup and focuses its heading', async () => {
     const { fetchMock } = mockApi((b) => jsonResponse(b.title === 'a' ? flip : rip));
     const { input } = renderApp();
     typeAndSubmit(input, 'a');
     await heading('Flip it');
-    typeAndSubmit(input, 'b');
+    // Back to a live #lookup-input first: the lookup group only lives in the resting sheet, so a
+    // second typed submission needs a fresh dismissal, not the (now detached) first `input`.
+    fireEvent.click(screen.getByRole('button', { name: 'Check another' }));
+    typeAndSubmit(currentInput(), 'b');
     await heading('Rip it');
     const lookupCalls = () => fetchMock.mock.calls.filter(([u]) => String(u) === '/api/lookup').length;
     expect(lookupCalls()).toBe(2);
 
-    const items = within(document.getElementById('recent')!).getAllByRole('listitem');
+    const recentButton = screen.getByRole('button', { name: 'Recent' });
+    fireEvent.click(recentButton);
+    const dialog = await screen.findByRole('dialog', { name: 'Recent' });
+    const items = within(dialog).getAllByRole('listitem');
     expect(items[0]!.textContent).toContain('Rip it');
     fireEvent.click(items[1]!.querySelector('button')!);
     const h = await heading('Flip it');
     await waitFor(() => expect(document.activeElement).toBe(h));
     expect(screen.getByText(/Saved result, not refreshed\./)).toBeTruthy();
     expect(lookupCalls()).toBe(2);
+    // The Recent sheet closed itself on selection.
+    expect(screen.queryByRole('dialog', { name: 'Recent' })).toBeNull();
+  });
+
+  it('closing Recent without selecting returns focus to the chrome Recent button', async () => {
+    mockApi(() => jsonResponse(flip));
+    renderApp();
+    const recentButton = screen.getByRole('button', { name: 'Recent' });
+    fireEvent.click(recentButton);
+    const dialog = await screen.findByRole('dialog', { name: 'Recent' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(document.activeElement).toBe(recentButton));
   });
 });
 
 describe('App: errors (US6, T034)', () => {
-  it('S8 limit: heading focused, cap from meta, local reset time, link to Recent, no retry', async () => {
+  it('S8 limit: heading focused, cap from meta, local reset time, a button that opens Recent, no retry', async () => {
     mockApi(() => jsonResponse({ error: 'limit-reached', message: 'x' }, 429));
     const { input } = renderApp();
     typeAndSubmit(input, 'Chrono Trigger SNES');
     const h = await heading("You've hit today's limit");
     await waitFor(() => expect(document.activeElement).toBe(h));
     expect(screen.getByText(/^This network has used all 50 free lookups for today\. They reset at .+\.$/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Your recent lookups are still here.' }).getAttribute('href')).toBe('#recent');
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(input.value).toBe('Chrono Trigger SNES');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Your recent lookups are still here.' }));
+    await screen.findByRole('dialog', { name: 'Recent' });
   });
 
   it.each([
@@ -148,17 +220,57 @@ describe('App: errors (US6, T034)', () => {
     expect(input.value).toBe('9780345391803');
   });
 
-  it('S7 server validation: inline at the input, announced, focused; result area unchanged', async () => {
+  it('S7 server validation: the sheet collapses so the inline error at the input is visible, announced, focused', async () => {
     mockApi(() => jsonResponse({ error: 'validation', message: 'Identifier is not a valid UPC/ISBN/EAN.' }, 400));
-    const { input } = renderApp();
+    const { container, input } = renderApp();
     typeAndSubmit(input, '12345678');
+    // The lookup group only lives in the resting sheet (T032): a server validation error collapses
+    // it back there so the error is visible next to the input (contracts/sheet-states.md S7).
+    await waitFor(() => expect(sheet(container)?.classList.contains('sheet--resting')).toBe(true));
+    const freshInput = currentInput();
     const msg = await screen.findByText('Identifier is not a valid UPC/ISBN/EAN.');
-    expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(input.getAttribute('aria-describedby')).toBe(msg.id);
-    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(freshInput.getAttribute('aria-invalid')).toBe('true');
+    expect(freshInput.getAttribute('aria-describedby')).toBe(msg.id);
+    await waitFor(() => expect(document.activeElement).toBe(freshInput));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Identifier is not a valid UPC/ISBN/EAN.'));
     expect(screen.getByRole('heading', { name: 'Scan or type an item' })).toBeTruthy();
-    expect(input.value).toBe('12345678');
+  });
+});
+
+describe('App: S0 non-regression (T068, FR-024)', () => {
+  it('the resting sheet has the exact S0 heading and body, both inside .sheet--resting', () => {
+    mockApi(() => jsonResponse(flip));
+    renderApp();
+    const h = screen.getByRole('heading', { name: 'Scan or type an item' });
+    expect(h.closest('.sheet--resting')).toBeTruthy();
+    const body = screen.getByText("You'll get a verdict — flip it or rip it — with the numbers behind it.");
+    expect(body.parentElement).toBe(h.parentElement);
+    expect(body.closest('.sheet--resting')).toBeTruthy();
+  });
+
+  it('#result-heading: at most one always, none while loading, exactly one once a verdict lands', async () => {
+    mockApi(() => new Promise<Response>(() => undefined));
+    const { input } = renderApp();
+    expect(document.querySelectorAll('#result-heading')).toHaveLength(1);
+    typeAndSubmit(input, 'Chrono Trigger SNES');
+    await waitFor(() => expect(document.querySelector('.result[aria-busy="true"]')).toBeTruthy());
+    expect(document.querySelectorAll('#result-heading')).toHaveLength(0);
+  });
+
+  it('after a verdict is dismissed, the S0 heading and body are present again', async () => {
+    mockApi(() => jsonResponse(flip));
+    const { input } = renderApp();
+    typeAndSubmit(input, 'Chrono Trigger SNES');
+    await heading('Flip it');
+    fireEvent.click(screen.getByRole('button', { name: 'Check another' }));
+    expect(screen.getByRole('heading', { name: 'Scan or type an item' })).toBeTruthy();
+    expect(screen.getByText("You'll get a verdict — flip it or rip it — with the numbers behind it.")).toBeTruthy();
+  });
+
+  it('the document title is the plain app name in the resting state', () => {
+    mockApi(() => jsonResponse(flip));
+    renderApp();
+    expect(document.title).toBe('Flip it or Rip it');
   });
 });
 
@@ -167,5 +279,45 @@ describe('App: no camera', () => {
     mockApi(() => jsonResponse(flip));
     renderApp();
     expect(screen.queryByRole('button', { name: 'Scan' })).toBeNull();
+  });
+});
+
+describe('App: desktop (≥ 1024 px, FR-027, contracts/sheet-states.md desktop rules)', () => {
+  function stubDesktop() {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(min-width: 1024px)',
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      })),
+    );
+  }
+
+  it('renders .col-lookup and .col-recent, an always-expanded pane sheet with no grabber, and one #result-heading', async () => {
+    stubDesktop();
+    mockApi(() => jsonResponse(flip));
+    const { container } = renderApp();
+    expect(container.querySelector('.col-lookup')).toBeTruthy();
+    expect(container.querySelector('.col-recent')).toBeTruthy();
+    const s = sheet(container)!;
+    expect(s.classList.contains('sheet--expanded')).toBe(true);
+    expect(s.classList.contains('sheet--pane')).toBe(true);
+    expect(s.querySelector('.sheet__grabber')).toBeNull();
+    expect(s.querySelector('section.result')).toBeTruthy();
+    expect(document.querySelectorAll('#result-heading')).toHaveLength(1);
+    expect(container.querySelector('.sheet--resting')).toBeNull();
+  });
+
+  it('"Check another" resets the middle pane back to the S0 explainer', async () => {
+    stubDesktop();
+    mockApi(() => jsonResponse(flip));
+    const { input } = renderApp();
+    typeAndSubmit(input, 'Chrono Trigger SNES');
+    await heading('Flip it');
+    fireEvent.click(screen.getByRole('button', { name: 'Check another' }));
+    await screen.findByRole('heading', { name: 'Scan or type an item' });
+    expect(document.querySelectorAll('#result-heading')).toHaveLength(1);
   });
 });
