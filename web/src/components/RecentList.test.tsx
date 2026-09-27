@@ -164,6 +164,22 @@ describe('RecentList', () => {
       await waitFor(() => expect(document.activeElement).toBe(document.getElementById('recent-heading')));
     });
 
+    it('selecting an entry moves focus out of the dialog synchronously, before it closes', () => {
+      // Regression: the native <dialog> restores focus to the opener on close() only when focus
+      // is still inside the dialog at that moment. jsdom's polyfill (src/test/setup.ts) doesn't
+      // implement that restore at all, so it can't reproduce the theft itself — the bug only
+      // showed up in the real e2e matrix — but it can prove the half we control: the recent-item
+      // button is no longer the active element the instant it's clicked, before onSelect/onClose
+      // ever run, which is what starves the native restore of a focus target to steal back.
+      render(<Harness />);
+      const item = screen.getAllByRole('listitem')[0]!.querySelector('button')!;
+      item.focus();
+      expect(document.activeElement).toBe(item);
+      fireEvent.click(item);
+      expect(document.activeElement).not.toBe(item);
+      expect(document.querySelector('dialog.recent-sheet')!.contains(document.activeElement)).toBe(false);
+    });
+
     it('has the same entries and accessible names as the pane', () => {
       render(<Harness />);
       const time = formatCheckedAt(history[0]!.checkedAt);
