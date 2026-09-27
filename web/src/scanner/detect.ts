@@ -66,17 +66,29 @@ export function classifyMediaError(err: unknown): ScanFailure {
 
 const FRAME_INTERVAL_MS = 125; // ≈ 8 fps: plenty for a held barcode, easy on the battery
 
+export type ScanHandle = {
+  /**
+   * Suppress ONLY this code: it will not be emitted again until resume(). Any other code decoded
+   * while suspended is emitted normally (FR-010, contracts/sheet-states.md behaviour 3).
+   */
+  suspendFor(code: string): void;
+  /** Clear the suppression and the debounce state, so the same code can fire again. */
+  resume(): void;
+};
+
 /**
- * Opens the rear camera into `video` and resolves once the loop is running. Calls `onCode`
- * once, after the same value is read twice in a row. All tracks stop on accept or abort.
- * Rejects with `ScanError` when scanning is impossible.
+ * Opens the rear camera into `video` and resolves the ScanHandle once the loop is running.
+ * Calls `onCode` after the same value is read twice in a row, and keeps decoding — the stream
+ * stays live so a second item can be scanned while the result sheet for the first is still open
+ * (FR-011, amending 006 FR-009). `signal.abort()` is the only release: it stops every track and
+ * clears `video.srcObject`. Rejects with `ScanError` when scanning is impossible.
  */
 export async function startScan(
   video: HTMLVideoElement,
   onCode: (code: string) => void,
   signal: AbortSignal,
   makeDetector: () => Promise<Detector> = createDetector,
-): Promise<void> {
+): Promise<ScanHandle> {
   if (!navigator.mediaDevices?.getUserMedia) throw new ScanError('unsupported');
   const detectorPromise = makeDetector();
   detectorPromise.catch(() => undefined); // handled below; avoid an unhandled rejection
@@ -92,7 +104,11 @@ export async function startScan(
     for (const t of stream.getTracks()) t.stop();
     video.srcObject = null;
   };
-  if (signal.aborted) return stop();
+  const noop: ScanHandle = { suspendFor: () => undefined, resume: () => undefined };
+  if (signal.aborted) {
+    stop();
+    return noop;
+  }
   signal.addEventListener('abort', stop, { once: true });
 
   let detector: Detector;
@@ -102,7 +118,7 @@ export async function startScan(
     stop();
     throw new ScanError('unsupported');
   }
-  if (signal.aborted) return;
+  if (signal.aborted) return noop;
 
   video.muted = true;
   video.playsInline = true;
@@ -115,6 +131,8 @@ export async function startScan(
 
   let last: string | null = null;
   let lastRun = 0;
+  let suppressed: string | null = null;
+  let pendingClear = false;
 
   const schedule = () => {
     if (signal.aborted) return;
@@ -132,12 +150,19 @@ export async function startScan(
         const codes = await detector.detect(video);
         if (signal.aborted) return;
         const value = codes[0]?.rawValue ?? null;
+        // The suppressed code must leave the frame before it can fire again (FR-010): only once a
+        // read differs from it — including a code-free read — do we clear the suppression.
+        if (pendingClear && value !== suppressed) {
+          pendingClear = false;
+          suppressed = null;
+        }
         if (value !== null) {
-          if (value === last) {
-            signal.removeEventListener('abort', stop);
-            stop();
+          if (value === last && value !== suppressed) {
+            // Auto-suppress on fire: the stream stays live, so without this the very next tick
+            // would read the same steady value and fire again. `resume()` (after the code leaves
+            // the frame) is what lets it fire a second time.
+            suppressed = value;
             onCode(value);
-            return;
           }
           last = value;
         }
@@ -149,4 +174,14 @@ export async function startScan(
   };
 
   schedule();
+
+  return {
+    suspendFor(code: string) {
+      suppressed = code;
+      last = code;
+    },
+    resume() {
+      pendingClear = true;
+    },
+  };
 }
