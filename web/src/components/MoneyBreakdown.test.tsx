@@ -11,27 +11,37 @@ function rows(container: Element) {
 }
 
 describe('MoneyBreakdown', () => {
-  it('lists value, fees, shipping and profit; no cost row at $0', () => {
+  it('shows the net figure, caption and three rows; no cost row at $0', () => {
     const { container } = render(<MoneyBreakdown result={flip} costBasisCents={0} />);
-    expect(screen.getByText('+$22.07 profit')).toBeTruthy();
+    expect(container.querySelector('.net__figure')!.textContent).toBe('$22.07');
+    expect(container.querySelector('.net__caption')!.textContent).toBe('in your pocket');
     expect(rows(container)).toEqual([
-      ['Est. sale value', '$31.20'],
+      ['Sells for', '$31.20'],
       ['eBay fees', '−$4.13'],
       ['Shipping', '−$5.00'],
-      ['Profit', '$22.07'],
     ]);
-    expect(container.querySelector('dl')).toBeTruthy();
   });
 
   it('shows the cost row when a cost was entered', () => {
     const r = { ...flip, profitCents: 1407 };
     const { container } = render(<MoneyBreakdown result={r} costBasisCents={800} />);
-    expect(rows(container)).toContainEqual(['What you paid', '−$8.00']);
+    const rowList = rows(container);
+    expect(rowList).toHaveLength(4);
+    expect(rowList[3]).toEqual(['What you paid', '−$8.00']);
+    expect(container.querySelector('.net__figure')!.textContent).toBe('$14.07');
   });
 
-  it('reads a loss in words, not color alone', () => {
-    render(<MoneyBreakdown result={{ ...flip, profitCents: -320 }} costBasisCents={0} />);
-    expect(screen.getByText('loses $3.20')).toBeTruthy();
+  it('reads a loss with the loss caption and modifier class', () => {
+    const { container } = render(<MoneyBreakdown result={{ ...flip, profitCents: -320 }} costBasisCents={0} />);
+    expect(container.querySelector('.net__figure')!.textContent).toBe('−$3.20');
+    expect(container.querySelector('.net__caption')!.textContent).toBe('out of pocket — a loss');
+    expect(container.querySelector('.net--loss')).toBeTruthy();
+  });
+
+  it('never shows a Profit row or the total modifier', () => {
+    const { container } = render(<MoneyBreakdown result={flip} costBasisCents={0} />);
+    expect(rows(container).some(([term]) => term === 'Profit')).toBe(false);
+    expect(container.querySelector('.figures__row--total')).toBeNull();
   });
 
   it('never displays the raw asking median', () => {
@@ -39,9 +49,9 @@ describe('MoneyBreakdown', () => {
     expect(container.textContent).not.toContain('$39.00');
   });
 
-  it('unreliable: carries the different-product note instead of a hero profit', () => {
+  it('unreliable: carries the different-product note instead of the net figure', () => {
     render(<MoneyBreakdown result={uncertain} costBasisCents={0} unreliable />);
     expect(screen.getByText('These figures may be for a different product.')).toBeTruthy();
-    expect(screen.queryByText('+$5.41 profit')).toBeNull();
+    expect(document.querySelector('.net')).toBeNull();
   });
 });

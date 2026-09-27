@@ -1,23 +1,51 @@
 import { render, screen } from '@testing-library/preact';
 import { describe, expect, it } from 'vitest';
 import { flip, noMarket, rip, risky, uncertain } from '../test/fixtures';
+import { NO_MARKET_REASON, UNCERTAIN_REASON } from '../lib/verdict-copy';
 import { VerdictBanner } from './VerdictBanner';
 
 describe('VerdictBanner', () => {
   it.each([
-    [flip, 'Flip it', 'Worth selling', 'verdict--flip'],
-    [risky, 'Flip it — slow seller', 'Worth listing, expect to wait', 'verdict--risky'],
-    [rip, 'Rip it', 'Not worth your time. Donate or recycle it.', 'verdict--rip'],
-    [uncertain, "Can't tell", "We couldn't identify this item", 'verdict--unc'],
-  ])('%#: label, eyebrow, icon and treatment', (result, label, eyebrow, cls) => {
+    [flip, 'Flip it', 'Worth selling', 'capsule--flip', 'tag'],
+    [risky, 'Flip it — slow seller', 'Worth listing, expect to wait', 'capsule--risky', 'hourglass'],
+    [rip, 'Rip it', 'Not worth your time. Donate or recycle it.', 'capsule--rip', 'heart-hand'],
+    [uncertain, "Can't tell", "We couldn't identify this item", 'capsule--unc', 'question'],
+  ])('%#: label, eyebrow, icon and treatment', (result, label, eyebrow, cls, icon) => {
     const { container } = render(<VerdictBanner result={result} />);
     const h = screen.getByRole('heading', { level: 2, name: label });
     expect(h.getAttribute('tabindex')).toBe('-1');
     expect(h.id).toBe('result-heading');
     expect(screen.getByText(eyebrow)).toBeTruthy();
-    expect(container.querySelector('.verdict')!.classList.contains(cls)).toBe(true);
-    const svg = container.querySelector('svg')!;
-    expect(svg.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector(`.capsule.${cls}`)).toBeTruthy();
+    const svg = container.querySelector('.capsule svg')!;
+    expect(svg.getAttribute('data-icon')).toBe(icon);
+  });
+
+  it('h2#result-heading is a descendant of .capsule and non-focusable by tab order', () => {
+    const { container } = render(<VerdictBanner result={flip} />);
+    const capsule = container.querySelector('.capsule')!;
+    const h = capsule.querySelector('#result-heading')!;
+    expect(h).toBeTruthy();
+    expect(h.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('the capsule is immediately followed by the reason paragraph', () => {
+    const { container } = render(<VerdictBanner result={flip} />);
+    const capsule = container.querySelector('.capsule')!;
+    expect(capsule.nextElementSibling!.classList.contains('verdict__reason')).toBe(true);
+  });
+
+  it('each verdict eyebrow renders verbatim', () => {
+    for (const [result, eyebrow] of [
+      [flip, 'Worth selling'],
+      [risky, 'Worth listing, expect to wait'],
+      [rip, 'Not worth your time. Donate or recycle it.'],
+      [uncertain, "We couldn't identify this item"],
+    ] as const) {
+      const { unmount } = render(<VerdictBanner result={result} />);
+      expect(screen.getByText(eyebrow)).toBeTruthy();
+      unmount();
+    }
   });
 
   it('shows the API reason for normal verdicts', () => {
@@ -27,25 +55,34 @@ describe('VerdictBanner', () => {
 
   it('overrides the reason for UNCERTAIN and no-market', () => {
     render(<VerdictBanner result={uncertain} />);
-    expect(
-      screen.getByText("We found listings, but they don't agree on one product, so any price would be a guess."),
-    ).toBeTruthy();
+    expect(screen.getByText(UNCERTAIN_REASON)).toBeTruthy();
     render(<VerdictBanner result={noMarket} />);
-    expect(screen.getByText("No one is selling this on eBay right now, so there's no price to go on.")).toBeTruthy();
+    expect(screen.getByText(NO_MARKET_REASON)).toBeTruthy();
   });
 
-  it('renders the S12 saved-result note', () => {
-    render(<VerdictBanner result={flip} savedAt={new Date().toISOString()} />);
+  it('renders the S12 saved-result note before the capsule, and describes the heading', () => {
+    const { container } = render(<VerdictBanner result={flip} savedAt={new Date().toISOString()} />);
     expect(screen.getByText(/^Checked .+\. Saved result, not refreshed\.$/)).toBeTruthy();
-    // The note precedes the focused heading, so the heading is described by it (e2e finding).
+    const saved = container.querySelector('.verdict__saved')!;
+    const capsule = container.querySelector('.capsule')!;
+    expect(saved.compareDocumentPosition(capsule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const h = screen.getByRole('heading', { level: 2 });
     expect(h.getAttribute('aria-describedby')).toBe('result-saved-note');
-    expect(document.getElementById('result-saved-note')!.textContent).toMatch(/Saved result, not refreshed\.$/);
   });
 
   it('has no description on a fresh result', () => {
     render(<VerdictBanner result={flip} />);
     expect(screen.getByRole('heading', { level: 2 }).hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('the capsule contains only the dot, icon and label — no eyebrow, saved note or env note', () => {
+    const { container } = render(
+      <VerdictBanner result={flip} savedAt={new Date().toISOString()} testData />,
+    );
+    const capsule = container.querySelector('.capsule')!;
+    expect(capsule.querySelector('.verdict__eyebrow')).toBeNull();
+    expect(capsule.querySelector('.verdict__saved')).toBeNull();
+    expect(capsule.querySelector('.env-note')).toBeNull();
   });
 
   describe('env note (spec 007, US3)', () => {

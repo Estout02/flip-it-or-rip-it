@@ -1,14 +1,15 @@
-// S2 breakdown: hero profit phrase + a <dl> of the figures. rawAskingMedianCents and
-// realizationRate are never displayed (FR-006).
-import { describeProfit, formatCents } from '../lib/money';
+// S2 breakdown: hero net figure + caption, then a <dl> of the figures. rawAskingMedianCents and
+// realizationRate are never displayed (FR-006). No separate "Profit" row — the hero carries that
+// fact (FR-022).
+import { formatCents } from '../lib/money';
 import type { VerdictResult } from '../lib/types';
-import { ROUGH_FIGURES_NOTE } from '../lib/verdict-copy';
+import { MONEY_ROWS, netCaption, ROUGH_FIGURES_NOTE } from '../lib/verdict-copy';
 
 type Props = { result: VerdictResult; costBasisCents: number; unreliable?: boolean };
 
-function Row({ term, cents, total }: { term: string; cents: number; total?: boolean }) {
+function Row({ term, cents }: { term: string; cents: number }) {
   return (
-    <div class={total ? 'figures__row figures__row--total' : 'figures__row'}>
+    <div class="figures__row">
       <dt>{term}</dt>
       <dd class="money">{formatCents(cents)}</dd>
     </div>
@@ -22,16 +23,16 @@ export function MoneyBreakdown({ result, costBasisCents, unreliable = false }: P
       {unreliable ? (
         <p class="breakdown__note">{ROUGH_FIGURES_NOTE}</p>
       ) : (
-        <p class={loss ? 'hero-profit hero-profit--loss money' : 'hero-profit money'}>
-          {describeProfit(result.profitCents)}
+        <p class={loss ? 'net net--loss' : 'net'}>
+          <span class="net__figure money">{formatCents(result.profitCents)}</span>
+          <span class="net__caption">{netCaption(result.profitCents)}</span>
         </p>
       )}
       <dl class="figures">
-        <Row term="Est. sale value" cents={result.estimatedValueCents} />
-        <Row term="eBay fees" cents={-result.feesCents} />
-        <Row term="Shipping" cents={-result.shippingEstimateCents} />
-        {costBasisCents > 0 && <Row term="What you paid" cents={-costBasisCents} />}
-        <Row term="Profit" cents={result.profitCents} total />
+        <Row term={MONEY_ROWS.value} cents={result.estimatedValueCents} />
+        <Row term={MONEY_ROWS.fees} cents={-result.feesCents} />
+        <Row term={MONEY_ROWS.shipping} cents={-result.shippingEstimateCents} />
+        {costBasisCents > 0 && <Row term={MONEY_ROWS.cost} cents={-costBasisCents} />}
       </dl>
     </div>
   );

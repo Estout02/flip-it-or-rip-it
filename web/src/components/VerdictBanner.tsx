@@ -1,5 +1,7 @@
-// The verdict hero: icon + eyebrow + label (h2, focus target) + reason. Text, icon and color
-// together carry the verdict — never color alone (FR-003).
+// The verdict siblings placed directly in `.result__body` (R-C): optional saved/env notes, then
+// the capsule (dot + icon + label only — never text below the large-text threshold on the tint,
+// color-contract rule 1), then the reason, then the eyebrow. Text, icon and color together carry
+// the verdict — never color alone (FR-003).
 import type { Ref } from 'preact';
 import type { VerdictResult } from '../lib/types';
 import { historyNote, reasonFor, TEST_DATA_LABEL, TEST_DATA_WIDE, VERDICT_COPY } from '../lib/verdict-copy';
@@ -20,37 +22,33 @@ type Props = {
 
 export function VerdictBanner({ result, headingRef, savedAt, testData }: Props) {
   const copy = VERDICT_COPY[result.verdict];
+  const describedBy = savedAt ? (testData ? `${SAVED_NOTE_ID} ${ENV_NOTE_ID}` : SAVED_NOTE_ID) : undefined;
   return (
-    <div class={`verdict verdict--${copy.treatment}`}>
-      <Icon name={copy.icon} class="verdict__icon" />
-      <div class="verdict__text">
-        <p class="verdict__eyebrow">{copy.eyebrow}</p>
-        {savedAt && (
-          <p id={SAVED_NOTE_ID} class="verdict__saved">
-            <Icon name="clock" class="icon--inline" />
-            {historyNote(savedAt)}
-          </p>
-        )}
-        {savedAt && testData && (
-          <p id={ENV_NOTE_ID} class="env-note">
-            <Icon name="flask" class="icon--chip" />
-            {TEST_DATA_LABEL}
-            {TEST_DATA_WIDE}
-          </p>
-        )}
-        {/* The saved note sits above the heading, i.e. before the focus target in reading order,
+    <>
+      {savedAt && (
+        <p id={SAVED_NOTE_ID} class="verdict__saved">
+          <Icon name="clock" class="icon--inline" />
+          {historyNote(savedAt)}
+        </p>
+      )}
+      {savedAt && testData && (
+        <p id={ENV_NOTE_ID} class="env-note">
+          <Icon name="flask" class="icon--chip" />
+          {TEST_DATA_LABEL}
+          {TEST_DATA_WIDE}
+        </p>
+      )}
+      <div class={`capsule capsule--${copy.treatment}`}>
+        <span class="capsule__dot" aria-hidden="true" />
+        <Icon name={copy.icon} class="capsule__icon" />
+        {/* The saved note sits above the capsule, i.e. before the focus target in reading order,
             so it would be skipped when focus lands here: describe the heading with it (S12). */}
-        <h2
-          id={RESULT_HEADING_ID}
-          class="verdict__label"
-          tabIndex={-1}
-          ref={headingRef}
-          aria-describedby={savedAt ? (testData ? `${SAVED_NOTE_ID} ${ENV_NOTE_ID}` : SAVED_NOTE_ID) : undefined}
-        >
+        <h2 id={RESULT_HEADING_ID} class="capsule__label" tabIndex={-1} ref={headingRef} aria-describedby={describedBy}>
           {copy.label}
         </h2>
-        <p class="verdict__reason">{reasonFor(result)}</p>
       </div>
-    </div>
+      <p class="verdict__reason">{reasonFor(result)}</p>
+      <p class="verdict__eyebrow">{copy.eyebrow}</p>
+    </>
   );
 }
