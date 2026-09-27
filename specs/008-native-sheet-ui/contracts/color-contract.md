@@ -126,8 +126,69 @@ The tint borders also stay visible against their own fills: 4.93 (flip), 5.32 (r
    violation, for text over a video.
 4. **The hairline carries nothing.** Row meaning comes from each `dt`; the sheet edge is also carried
    by the shadow and the radius.
-5. **Forced colors wins.** In `forced-colors: active`, capsules, buttons, rows and the sheet take
-   `CanvasText` borders and system button colours; the verdict is still carried by label plus icon.
+5. **Forced colors wins, and it wins *per surface family*.** In `forced-colors: active` every surface
+   family below must end up with a **self-consistent pair** — either both colours forced by the UA, or
+   both pinned to system keywords — and a perceivable boundary. The verdict is still carried by label
+   plus icon. The families are: **the sheet** (and the Recent sheet), **capsules and chips**, **money
+   rows**, **buttons**, **the chrome bar — including its buttons, the wordmark and the status pill and
+   sandbox badge that sit on or beside it**, **dialogs**, and **the decorative set** (reticle, grabber,
+   hairlines, icons, skeleton, spinner) which is exempt because nothing depends on it.
+
+   **The trap that caused the `.chrome` defect (2026-09-26, fixed in `tokens.css` ec72f77):**
+   `forced-color-adjust` is an **inherited** property. Pinning a container with
+   `forced-color-adjust: none` therefore switches forcing off for **every descendant**, so any
+   descendant that authors its own colour keeps that author colour against the pinned system
+   background. Before the fix, the chrome bar's background auto-forced to `Canvas` while `--chrome-fg`
+   text survived — **1.08:1** on `.wordmark__text` and `.chrome__btn` — failing `S2`–`S6 — forced
+   colors` and `N3 — forced colors`. The fix pinned `.chrome` and `.chrome__btn` (both now 21:1) but,
+   because the property inherits, **`.wordmark` still authors its own colour inside that subtree and is
+   still 1.09:1** (see the inventory). Hence the rule: **when a surface takes `forced-color-adjust: none`, every
+   descendant that authors a colour must be re-pointed at a system colour in the same rule** (or stop
+   authoring one and inherit). An opaque-over-video surface left *entirely* to auto-forcing is fine —
+   the status pill and the sandbox badge prove it (both measure 21:1) — it is the **mixed** state that
+   fails.
+
+### Forced-colors surface inventory (measured)
+
+Verified on 2026-09-27 in Chromium 153 with the shipped `web/src/styles/*.css`, `forcedColors:
+'active'`, light palette (`Canvas` `#FFFFFF`, `CanvasText` `#000000`, `ButtonFace` `#FFFFFF`,
+`ButtonText` `#000000`). "Pinned" = the rule sets `forced-color-adjust: none` plus explicit system
+colours; "auto" = left to the UA.
+
+| Surface | Treatment that ships | Measured pair | Boundary |
+|---|---|---|---|
+| `.chrome`, `.chrome__btn` | pinned `ButtonFace` / `ButtonText` | **21:1** | 2 px `CanvasText` on `.chrome__btn` |
+| `.wordmark`, `.wordmark__text` (from `.wordmark { color: var(--chrome-fg) }`) | **inherits `forced-color-adjust: none` from `.chrome` and keeps the author colour** | **1.09:1 — open defect**, `#F5F5F7` on `ButtonFace` | n/a |
+| `.pill` (status pill) | auto | 21:1 | 2 px `CanvasText` |
+| `.env-badge` | auto, with an explicit `forced-color-adjust: auto` | 21:1 | 1 px `CanvasText` |
+| `.sheet`, `.sheet--full` | auto | 21:1 | 2 px `CanvasText` |
+| `.capsule--*`, `.chip--*` | auto | 21:1 | 1 px `CanvasText`; UNCERTAIN keeps 2 px **dashed** |
+| `.figures__row` | auto | 21:1 | 2 px `CanvasText` |
+| `.btn` (neutral, secondary) | pinned `ButtonFace` / `ButtonText` | 21:1 | 1 px `ButtonText` |
+| `.btn--primary` **after a verdict** (`.capsule--x ~ .actions .btn--primary`, specificity 0,3,0) | **author fill survives** — it outranks `:root .btn--primary` (0,2,0) | **4.97 / 5.34 / 5.78 / 6.64** — the contract's own L9–L12 pairs, so legible, but not the system palette | 1 px author tint |
+| `.dialog` (settings, clear-history confirm) | auto | 21:1 | 1 px `CanvasText` (its hairline border auto-forces) |
+| `.input`, `.field__error`, `.badge`, `.basis-note`, `.net`, `.net__caption`, `.recent-item`, `.btn-text` | auto | 21:1 | as authored, auto-forced |
+| `.skip-link` | auto | 13.99:1 (`LinkText` on `Canvas`) | — |
+| `.viewfinder__reticle`, `.sheet__grabber`, `.icon`, `.skeleton`, `.spinner` | auto; **decorative** | n/a | icons switch to `currentColor` strokes |
+
+Two items this audit leaves open — both are code, not contract, so they are recorded here rather than
+fixed here:
+
+- **`.wordmark__text` is still 1.09:1** under forced colors at any width where it is visible (it is
+  clipped below 480 px only when the sandbox badge is present, so desktop shows it). Minimal fix:
+  include `.wordmark` in the `:root .chrome, :root .chrome__btn` rule, or delete
+  `.wordmark { color: var(--chrome-fg) }` so it inherits the pinned `ButtonText`.
+- **The verdict primary button keeps its author fill** in forced colors because
+  `.capsule--x ~ .actions .btn--primary` (0,3,0) outranks `:root .btn--primary` (0,2,0). Every pair
+  stays legible (L9–L12: 4.97–6.64), so this is a palette-fidelity choice, not a contrast failure:
+  either raise the forced-colors rule's specificity to cover the four verdict variants, or accept it
+  deliberately and record the reason here.
+
+Method note: both readings were taken twice — once in a full-page fixture and once in an isolated
+one, after waiting out `.btn`'s 120 ms `background-color` transition. The first pass of the full
+fixture reported a spurious 1.00:1 for the FLIP_RISKY primary, which the isolated re-measurement
+disproved (5.34:1, as L10 says): a mid-transition sample, not a defect. Any future forced-colors
+assertion must settle transitions before reading computed colour.
 
 ## Reproducing this table
 
