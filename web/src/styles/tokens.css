@@ -139,4 +139,16 @@
     color: ButtonText;
     border-color: ButtonText;
   }
+  /* The chrome bar sits over live video and must stay legible in forced colors too (FR-018): left
+     to auto-forcing it measured 1.08:1 (an auto-forced Canvas background under still-authored
+     chrome-fg text), so it takes the same explicit system pair as the buttons above, for the same
+     reason. (:root raises specificity over sheet.css, which declares .chrome/.chrome__btn plainly
+     and loads later.) */
+  :root .chrome,
+  :root .chrome__btn {
+    forced-color-adjust: none;
+    background-color: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+  }
 }
