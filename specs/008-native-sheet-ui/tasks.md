@@ -173,18 +173,38 @@ non-existent project makes Playwright error out (T001) or skip everywhere (T069)
 
 **The recipe** — used *identically* by T001 (pre-change) and T069 (post-change), so the two numbers
 are comparable. `mockApi(page)` with zero added delay, so this measures the client render path only;
-the `flip` fixture query `Chrono Trigger SNES`; five cycles, each returning to the resting state via
-the visible `Check another` control; take the **median**. Reuse the existing `web/e2e/fixtures.ts`
-exports (`mockApi`, `gotoApp`, `input`, `resultHeading`, `QUERIES`, `LABELS`) rather than hand-rolling
-selectors. Per cycle:
+five cycles, each returning to the lookup-ready state via the visible `Check another` control; take
+the **median**. Reuse the existing `web/e2e/fixtures.ts` exports (`mockApi`, `gotoApp`, `input`,
+`resultHeading`, `QUERIES`, `LABELS`) rather than hand-rolling selectors.
+
+**The fixture alternates, and that is load-bearing — do not "simplify" it to one fixture.** The exact
+sequence is `flip, rip, flip, rip, flip`, i.e. queries `Chrono Trigger SNES` → `Common Paperback` →
+… with expected labels `Flip it` → `Rip it` → … (`LABELS.flip` and `LABELS.rip`, verified distinct in
+`web/e2e/fixtures.ts`). The reason: **pre-change, "Check another" does not reset the lookup.**
+`checkAnother` in `web/src/app.tsx` (line ~58) calls only `formRef.current?.clear()` and never
+`use-lookup`'s `reset()` (`web/src/lib/use-lookup.ts` line ~128), so `shown` never returns to
+`{ status: 'idle' }` and the heading keeps displaying the **previous verdict label**. (008/T032 is what
+wires `checkAnother` to `reset`, which is why the resting copy only appears post-change.) With one
+fixed fixture the pre-change run would fail its precondition on cycle 1 — `Received: "Flip it"` where
+`'Scan or type an item'` was expected — and a predicate of "heading text equals the label" would
+already be true at ~0 ms, a false pass. Alternating makes both assertions valid on **both** sides of
+the change without a second code path:
+
+- **Per-cycle precondition**: the heading text does **not** equal *this* cycle's expected label. True
+  pre-change (it holds the previous cycle's *different* label) and true post-change (it reads the
+  resting copy).
+- **Completion predicate**: heading text equals *this* cycle's expected label **and** the heading has
+  focus. Because the previous cycle's label differs, a stale heading can no longer satisfy it.
+
+Per cycle, with `name` walking the sequence and `label = LABELS[name]`:
 
 ```ts
-// 1. Precondition, asserted every cycle: we are at rest, so the completion predicate cannot
-//    already be true (this is what makes a ~0 ms false pass impossible).
-await expect(resultHeading(page)).toHaveText('Scan or type an item');
+// 1. Precondition, asserted every cycle: whatever the heading currently says, it is not what this
+//    cycle is waiting for — so the completion predicate cannot already be true (no ~0 ms false pass).
+await expect(resultHeading(page)).not.toHaveText(label);
 // 2. Typing is not part of submit → verdict, so fill first — and without this the `required`
 //    input would reject requestSubmit() and nothing would ever resolve.
-await input(page).fill(QUERIES.flip.query);
+await input(page).fill(QUERIES[name].query);
 // 3. Measure entirely in-page: no Playwright polling latency in the number.
 const ms = await page.evaluate(async (label) => {
   const el = document.querySelector('#lookup-input') as HTMLInputElement;
@@ -207,15 +227,23 @@ const ms = await page.evaluate(async (label) => {
   });
   await new Promise(requestAnimationFrame);
   return performance.now() - started;
-}, LABELS.flip);
-// 4. Back to rest for the next cycle.
+}, label);
+// 4. Back to the lookup-ready state for the next cycle. The recipe only ever types, never scans,
+//    so the ground stays static and this primary control is 'Check another' at both widths and on
+//    both sides of the change (R-D).
 await page.getByRole('button', { name: 'Check another' }).click();
 ```
 
-The completion predicate is **heading text equals the verdict label *and* the heading has focus** —
-both are unambiguous now that `#result-heading` also exists in the resting state carrying
-`'Scan or type an item'` (T032). A predicate of merely "`#result-heading` exists" would be satisfied by
-the first unrelated mutation and report ≈ 0 ms.
+A predicate of merely "`#result-heading` exists" would be satisfied by the first unrelated mutation and
+report ≈ 0 ms; and post-change `#result-heading` also exists in the resting state carrying
+`'Scan or type an item'` (T032), so existence alone is meaningless there too. Requiring *this* cycle's
+label plus focus is what makes the measurement honest.
+
+The median is taken over the mixed sequence rather than one fixture. That is fine for a regression
+gate because **the same mix runs on both sides**: `rip` renders slightly more than `flip` (it carries
+the MEDIUM match badge), and that difference is present in the baseline and in the gate alike, so it
+cancels in the comparison. Do not swap in `uncertain` or `noMarket` — their branches render a different
+shape (no money rows, a disclosure), which would make the mix less representative of the normal path.
 
 **Tolerance (pinned)**: `median <= Math.max(baselineMs * 1.25, 150)` — 25 % of slack over the recorded
 baseline, with a 150 ms floor so a very fast baseline cannot make the gate flaky, plus a hard ceiling
@@ -241,7 +269,7 @@ make its own verify pass.
 
 ## Phase 1: Setup
 
-- [ ] T001 Record both pre-change baselines into the **R-G** table in this file (`specs/008-native-sheet-ui/tasks.md`) — this is a gate, not a formality: if either measurement cannot be taken, or the suites are already red, stop and report instead of starting T002. (a) Run `docker compose run --rm --no-deps web sh -c "npm test && npm run typecheck"` and write down the `initial:` gzip figure printed by `web/scripts/check-size.mjs` (expected ≈ **20.6 KB** of the 100 KB budget, FR-028). (b) Measure submit → verdict on the **current** client with the R-G recipe: create a throwaway `web/e2e/baseline.spec.ts` containing only that recipe (importing `mockApi`, `gotoApp`, `input`, `resultHeading`, `QUERIES` and `LABELS` from `web/e2e/fixtures.ts`) and run it with `docker compose --profile e2e run --rm e2e sh -c "npm ci && npx playwright test baseline.spec.ts --project=mobile-390 --reporter=line"` — the `sh -c "npm ci && …"` prefix is **required**: overriding the service command skips the compose file's own `npm ci`, and the `e2e` service is the bare Playwright image with an *empty* anonymous volume at `/app/web/node_modules`, so `npx playwright test` alone cannot resolve `@playwright/test`. Then write the median into **two** places: `web/e2e/baseline.json` as `{ "submitToVerdictMedianMs": <number>, "measuredOn": "<ISO date>", "commit": "<sha>" }` (this is what T069 reads) and the R-G mirror cell. Finally **delete `web/e2e/baseline.spec.ts` unconditionally, in this task, before reporting** — confirm with `test ! -f web/e2e/baseline.spec.ts`; it must never be committed. `web/e2e/baseline.json` **is** committed and is the only file this task leaves behind under `web/e2e/` (WP10 owns that directory from wave 6 and only reads the JSON, so there is no conflict). No other file changes.
+- [ ] T001 Record both pre-change baselines into the **R-G** table in this file (`specs/008-native-sheet-ui/tasks.md`) — this is a gate, not a formality: if either measurement cannot be taken, or the suites are already red, stop and report instead of starting T002. (a) Run `docker compose run --rm --no-deps web sh -c "npm test && npm run typecheck"` and write down the `initial:` gzip figure printed by `web/scripts/check-size.mjs` (expected ≈ **20.6 KB** of the 100 KB budget, FR-028). (b) Measure submit → verdict on the **current** client with the R-G recipe, including its **alternating `flip, rip, flip, rip, flip` sequence** — that alternation is what makes the recipe run on the pre-008 client at all: today's `checkAnother` never calls `use-lookup`'s `reset()`, so after "Check another" the heading still shows the previous verdict label, and a single-fixture recipe would fail its cycle-1 precondition and admit a ~0 ms false pass. Do not switch to one fixture, a single cycle, or `page.reload()` between cycles: a median of one has no variance to reason about, and reloading would make this baseline measure a colder path than T069's gate, destroying the like-for-like comparison R-G exists to guarantee. Create a throwaway `web/e2e/baseline.spec.ts` containing only that recipe (importing `mockApi`, `gotoApp`, `input`, `resultHeading`, `QUERIES` and `LABELS` from `web/e2e/fixtures.ts`) and run it with `docker compose --profile e2e run --rm e2e sh -c "npm ci && npx playwright test baseline.spec.ts --project=mobile-390 --reporter=line"` — the `sh -c "npm ci && …"` prefix is **required**: overriding the service command skips the compose file's own `npm ci`, and the `e2e` service is the bare Playwright image with an *empty* anonymous volume at `/app/web/node_modules`, so `npx playwright test` alone cannot resolve `@playwright/test`. Then write the median into **two** places: `web/e2e/baseline.json` as `{ "submitToVerdictMedianMs": <number>, "measuredOn": "<ISO date>", "commit": "<sha>" }` (this is what T069 reads) and the R-G mirror cell. Finally **delete `web/e2e/baseline.spec.ts` unconditionally, in this task, before reporting** — confirm with `test ! -f web/e2e/baseline.spec.ts`; it must never be committed. `web/e2e/baseline.json` **is** committed and is the only file this task leaves behind under `web/e2e/` (WP10 owns that directory from wave 6 and only reads the JSON, so there is no conflict). No other file changes.
 
 ---
 
@@ -424,7 +452,7 @@ horizontally, and the axe matrix passes at desktop width.
 
 - [ ] T066 [P] Update the web-client paragraph in `CLAUDE.md` under "Current state": the client is now the native-sheet UI (spec `specs/008-native-sheet-ui/`) — the camera is the ground and the verdict rises as a frosted bottom sheet; the camera stays live behind an open sheet and is released on page hide, Cancel, or leaving the flow (**this amends 006 FR-009**, whose stop-on-decode assertions were rewritten, not deleted); decoding is suspended for the code that opened the sheet so a dismissal cannot double-charge a lookup; token contrast is measured against the worst-case composited ground by `web/src/styles/contrast.test.ts` against `web/src/styles/contrast-contract.ts`; the e2e matrix runs a second axe pass with the `<video>` hidden and fails on a `color-contrast` entry in `incomplete`; Recent opens as its own full-height sheet below 1024 px and stays a column above it; the ≤ 100 KB gzip budget and WCAG 2.2 AA still bind. Mention that `web/src/scanner/scanner.tsx` is now `web/src/scanner/viewfinder.tsx`.
 - [ ] T067 [P] Sweep stale references: `grep -rn "scan-dock\|scanner/scanner\|Est\. sale value" CLAUDE.md docs/ specs/006-web-client/ specs/007-environment-badge/` — update any prose hit in `CLAUDE.md` or `docs/` (spec files for 006/007 keep their history except the amendments T008 already made, which are marked `(008)`). Confirm `.env.example` needs no change (this feature adds no env var) and that `docs/PROJECT_BRIEF.md` still describes the product truthfully.
-- [ ] T069 Add the SC-007 latency gate to `web/e2e/core.spec.ts`: a test named `submit → verdict does not regress (SC-007)` that runs the **R-G recipe verbatim** (same helpers, same per-cycle precondition, same in-page predicate) with `mockApi(page)` and the `flip` fixture, five cycles, and asserts `median <= Math.max(BASELINE_MS * 1.25, 150)` and `Math.max(...samples) <= 400`. `BASELINE_MS` is **read mechanically** — `web/e2e/fixtures.ts` gains `export const BASELINE_MS: number` that imports `./baseline.json` (`{ "submitToVerdictMedianMs": … }`, written by T001) and throws at module load if the file is absent or the value is not a finite number > 0; do not hand-copy the figure into a literal, so a stale or blank baseline cannot pass unnoticed. Gate it to one device profile with `test.skip(({}, testInfo) => testInfo.project.name !== 'mobile-390')` — the project name must be one of the three in `web/playwright.config.ts` (`mobile-320`, `mobile-390`, `desktop-1280`); a name that exists in none of them skips on all three and the verify then passes having measured nothing. **Acceptance for this task is that the `list` reporter shows this test as passed on `mobile-390`** — "skipped everywhere" is a failure, not a pass. If `web/e2e/baseline.json` is missing, stop and report; do not invent a baseline and do not widen the tolerance to go green.
+- [ ] T069 Add the SC-007 latency gate to `web/e2e/core.spec.ts`: a test named `submit → verdict does not regress (SC-007)` that runs the **R-G recipe verbatim** — same helpers, the same alternating `flip, rip, flip, rip, flip` sequence, the same per-cycle "heading does not yet read *this* cycle's label" precondition and the same in-page predicate that T001 measured the baseline with. The two runs must be byte-for-byte the same procedure; if you find yourself simplifying it here (one fixture, fewer cycles, a reload) the comparison stops being like-for-like and the gate is worthless. With `mockApi(page)`, five cycles, assert `median <= Math.max(BASELINE_MS * 1.25, 150)` and `Math.max(...samples) <= 400`. `BASELINE_MS` is **read mechanically** — `web/e2e/fixtures.ts` gains `export const BASELINE_MS: number` that imports `./baseline.json` (`{ "submitToVerdictMedianMs": … }`, written by T001) and throws at module load if the file is absent or the value is not a finite number > 0; do not hand-copy the figure into a literal, so a stale or blank baseline cannot pass unnoticed. Gate it to one device profile with `test.skip(({}, testInfo) => testInfo.project.name !== 'mobile-390')` — the project name must be one of the three in `web/playwright.config.ts` (`mobile-320`, `mobile-390`, `desktop-1280`); a name that exists in none of them skips on all three and the verify then passes having measured nothing. **Acceptance for this task is that the `list` reporter shows this test as passed on `mobile-390`** — "skipped everywhere" is a failure, not a pass. If `web/e2e/baseline.json` is missing, stop and report; do not invent a baseline and do not widen the tolerance to go green.
 
 ---
 
