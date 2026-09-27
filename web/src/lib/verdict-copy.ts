@@ -48,6 +48,24 @@ export const EMPTY_HEADING = 'Scan or type an item';
 export const EMPTY_BODY = "You'll get a verdict — flip it or rip it — with the numbers behind it.";
 export const CHECKING = 'Checking…';
 
+// Spec 008: native sheet UI. Verbatim from specs/008-native-sheet-ui/contracts/copy-additions.md.
+export const NET_CAPTION_PROFIT = 'in your pocket';
+export const NET_CAPTION_LOSS = 'out of pocket — a loss';
+
+/** The caption under the hero net figure: profit (>= 0) reads differently from a loss (< 0). */
+export function netCaption(profitCents: number): string {
+  return profitCents >= 0 ? NET_CAPTION_PROFIT : NET_CAPTION_LOSS;
+}
+
+export const DISMISS_SCAN_NEXT = 'Scan the next one';
+
+export const MONEY_ROWS = {
+  value: 'Sells for',
+  fees: 'eBay fees',
+  shipping: 'Shipping',
+  cost: 'What you paid',
+} as const;
+
 export function isNoMarket(r: VerdictResult): boolean {
   return r.reasonCode === 'NO_MARKET_DATA' || r.noMarketData;
 }
@@ -134,6 +152,9 @@ export const SCANNER_COPY = {
   unsupported: "This browser can't scan barcodes. Type the number under the barcode instead.",
   typeInstead: 'Type it instead',
   cancel: 'Cancel',
+  // Verbatim from the local NO_CAMERA constant in web/src/scanner/scanner.tsx (spec 008 T007).
+  noCamera: 'No camera was found. Type the number under the barcode instead.',
+  found: (code: string) => `Barcode found · ${code}`,
 } as const;
 
 export const STORAGE_UNAVAILABLE = "Recent lookups can't be saved in this browser.";
