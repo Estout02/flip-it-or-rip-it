@@ -15,13 +15,6 @@ export const INPUT_ERROR_ID = 'lookup-error';
 
 export type LookupFormHandle = {
   focusInput(): void;
-  /**
-   * Validates and submits. `overrideQuery`, when given, is used instead of the current `query`
-   * prop — the caller (App, right after a scan) has just called `onQueryChange` with the decoded
-   * code, but that's a plain state write and hasn't reached this component's props yet within the
-   * same synchronous call; reading `query` here would submit the *previous* value (often empty).
-   */
-  submit(overrideQuery?: string): void;
   /** Clears the cost field only — the query lives in the caller's state (App) and is cleared
    * there via `onQueryChange('')`, since this component no longer owns it. */
   resetCost(): void;
@@ -64,10 +57,6 @@ export function LookupForm({
   const [costError, setCostError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const costRef = useRef<HTMLInputElement>(null);
-  const queryRef = useRef(query);
-  queryRef.current = query;
-  const costValueRef = useRef(cost);
-  costValueRef.current = cost;
 
   const error = clientError ?? serverError;
 
@@ -119,13 +108,12 @@ export function LookupForm({
     handle ?? null,
     () => ({
       focusInput: () => inputRef.current?.focus(),
-      submit: (overrideQuery?: string) => trySubmit(overrideQuery ?? queryRef.current, costValueRef.current),
       resetCost: () => {
         setCost('');
         setCostError(null);
       },
     }),
-    [onSubmit],
+    [],
   );
 
   return (

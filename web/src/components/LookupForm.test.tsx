@@ -144,13 +144,16 @@ describe('LookupForm', () => {
     expect(document.activeElement).toBe(input);
   });
 
-  it('handle: submit(overrideQuery) validates and sends the override rather than the current query prop', () => {
-    // This is the fix for the "empty query" race (spec 008 B1): the caller has just called
-    // `onQueryChange` but that update hasn't reached this component's `query` prop yet within the
-    // same synchronous call, so `submit` must be able to bypass it.
-    const { onSubmit, handle } = setup({ query: '' });
-    handle.current!.submit('9780345391803');
-    expect(onSubmit).toHaveBeenLastCalledWith({ identifier: '9780345391803' });
+  it("the handle no longer exposes an imperative submit — a decoded code must not depend on this component being mounted", () => {
+    // Superseded fix (spec 008): submitting via `formRef.current?.submit(code)` silently dropped
+    // every scan after the first, because <LookupForm> only lives in the resting sheet at narrow
+    // widths (T032) — once a result is showing, the form is unmounted and the ref is null. App
+    // now classifies and submits a decoded code directly (see app.scanner.test.tsx's SC-003 case);
+    // this asserts the trap can't come back by way of the handle shape.
+    const { handle } = setup();
+    expect(handle.current).not.toHaveProperty('submit');
+    expect(handle.current).toHaveProperty('focusInput');
+    expect(handle.current).toHaveProperty('resetCost');
   });
 
   it('handle: resetCost clears the cost field only — the query is the caller\'s to clear', async () => {

@@ -17,6 +17,7 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { RESULT_HEADING_ID } from './components/VerdictBanner';
 import { announce } from './lib/announce';
 import { DEFAULT_META, getMeta } from './lib/api';
+import { classify } from './lib/classify';
 import { formatCents } from './lib/money';
 import type { ScanFailure } from './scanner/detect';
 import { loadSettings, saveSettings, storageAvailable } from './lib/storage';
@@ -268,10 +269,13 @@ export function App() {
       formRef.current?.focusInput();
       return;
     }
-    // `code` is passed explicitly rather than relying on the `setQuery` above having reached
-    // <LookupForm>'s props yet (it hasn't, within this same synchronous call).
-    formRef.current?.submit(code);
-    setSheetView('expanded');
+    // Must not route through <LookupForm> — at narrow widths the lookup group (and the form)
+    // exists only in the resting sheet (T032). Once a first scan's result is showing, the sheet
+    // is expanded and `formRef.current` is null, so a second decode submitted through the form
+    // ref would silently no-op (SC-003: one Scan tap must decode a run of barcodes, not just one).
+    // App owns the query now, so it classifies and submits the code directly instead.
+    const c = classify(code);
+    submit(c.ok ? (c.kind === 'identifier' ? { identifier: c.value } : { title: c.value }) : { identifier: code });
     // After submit, so "Checking…" doesn't replace the scan confirmation.
     announce(`Scanned ${code}. Checking…`, 'polite');
   };

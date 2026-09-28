@@ -80,6 +80,27 @@ describe('App: lazy viewfinder', () => {
     await waitFor(() => expect(document.activeElement).toBe(input));
   });
 
+  it('one Scan tap decodes two distinct barcodes in a row, at narrow width, both starting a lookup (SC-003)', async () => {
+    // Regression for 04edc01: onCode used to submit via `formRef.current?.submit(code)`, but
+    // <LookupForm> only lives in the resting sheet at narrow widths (T032) — once the first
+    // code's result is showing, the sheet is expanded, the form is unmounted, and that call
+    // silently no-ops. A second decode must not depend on the form being mounted.
+    const { lookups } = mockApi((b) => jsonResponse(b.identifier === '9780345391803' ? flip : uncertain));
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Scan' }));
+    await waitFor(() => expect(document.querySelector('[data-fake-viewfinder]')).toBeTruthy());
+
+    viewfinderModule.lastProps!.onCode!('9780345391803');
+    await screen.findByRole('heading', { level: 2, name: 'Flip it' });
+    expect(lookups).toEqual([{ identifier: '9780345391803' }]);
+
+    // The camera stays live behind the open result sheet (FR-011): a second, different code
+    // decodes without any dismissal and must start its own lookup.
+    viewfinderModule.lastProps!.onCode!('0012345678905');
+    await waitFor(() => expect(lookups).toEqual([{ identifier: '9780345391803' }, { identifier: '0012345678905' }]));
+    await screen.findByRole('heading', { level: 2, name: "Can't tell" });
+  });
+
   it("UNCERTAIN's scan suggestion starts the camera", async () => {
     mockApi(() => jsonResponse(uncertain));
     const { input } = renderApp();
