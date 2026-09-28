@@ -557,14 +557,30 @@ test.describe('flagged concerns', () => {
       }
       return out;
     });
-    expect(controls.length).toBeGreaterThan(8);
+    // The guard was written against a state where the Recent sheet's `<dialog>` closed later
+    // than the selection it followed (04edc01 fixed that — the close now genuinely drives
+    // S12's focus), so this UNCERTAIN-from-history state no longer has the Recent sheet's
+    // leftover controls in it by the time this runs. The real floor is per width — a single
+    // number would let desktop silently lose everything `.col-lookup`/`#recent` add and still
+    // pass — confirmed by listing `checkVisibility()`'s output directly at each:
+    //   - mobile-320/390 (≥ 6): the skip link, the chrome `Recent` and `Settings` buttons, the
+    //     "Scan the barcode if it has one" suggestion, the rough-figures `<summary>`, and
+    //     "Check another". (mobile-320 also gets a 7th, "Show full title", when the matched
+    //     title clamps at that width — not guaranteed, so it isn't counted on.)
+    //   - desktop-1280 (≥ 14): the skip link, chrome `Settings` (no chrome `Recent` at this
+    //     width — R9), `#lookup-input`, the cost `<summary>` ("What I paid (optional)"), `Check`,
+    //     `Scan`, "Edit minimum profit", the "Scan the barcode if it has one" suggestion, the
+    //     rough-figures `<summary>`, "Check another", "Clear history", and the three `#recent`
+    //     pane's `.recent-item` entries.
+    // A drop below either floor is a real coverage loss, not this state settling.
+    expect(controls.length).toBeGreaterThanOrEqual(isDesktop(page) ? 14 : 6);
 
     const problems: string[] = [];
     for (const c of controls) {
       const node = await axNode(page, `[data-e2e-idx="${c.idx}"]`);
       // Chromium's AX tree doesn't expose every DOM-visible control in this state — the offscreen
       // skip link and controls inside the (closed-to-AT) Recent dialog come back `ignored`. That's
-      // not a label-in-name failure to report; `controls.length > 8` below still guards against
+      // not a label-in-name failure to report; the per-width floor above still guards against
       // this silently shrinking the set that gets checked.
       if (node.ignored) continue;
       if (node.role === 'textbox') continue; // named by <label>, no visible text inside
