@@ -56,6 +56,11 @@ async function tabWalk(page: Page): Promise<{ stops: number; sheetCovers: string
         key: a.dataset.e2eStop,
         label: (a.getAttribute('aria-label') ?? a.textContent ?? a.id).trim().slice(0, 40),
         isSheet: !!a.closest('.col-result .sheet'),
+        // The chrome bar (z-index 20) and the skip link (z-index 100) both sit `position: fixed`
+        // above the sheet's z-index 10 (sheet.css/base.css) — they always render on top regardless
+        // of geometric overlap, so a bounding-box intersection with either is not the WCAG 2.4.11
+        // violation this walk is for (a real visual obscuring).
+        isChrome: !!a.closest('.chrome, .skip-link'),
         el: { x: r.x, y: r.y, width: r.width, height: r.height },
         sheet: { x: sheet.x, y: sheet.y, width: sheet.width, height: sheet.height },
       };
@@ -66,7 +71,7 @@ async function tabWalk(page: Page): Promise<{ stops: number; sheetCovers: string
     stops++;
     // An element that lives inside the sheet is naturally inside its own box; only a stop
     // outside the sheet being covered by it is the WCAG 2.4.11 violation this test is for.
-    if (!info.isSheet && intersects(info.el, info.sheet)) sheetCovers.push(info.label);
+    if (!info.isSheet && !info.isChrome && intersects(info.el, info.sheet)) sheetCovers.push(info.label);
   }
   return { stops, sheetCovers };
 }
@@ -115,7 +120,11 @@ for (const colorScheme of THEMES) {
 
       const { stops, sheetCovers } = await tabWalk(page);
       expect(sheetCovers, `sheet covered: ${sheetCovers.join(', ')}`).toEqual([]);
-      expect(stops).toBeGreaterThan(10);
+      // The narrow *expanded* sheet's reachable set is small by design: skip link, chrome
+      // Recent, Settings, the rough-figures summary, Check another, Scan the next one — about 6,
+      // not the ~10+ of the resting sheet's lookup form. The real subject here is `sheetCovers`
+      // above; this floor only guards against the walk silently finding nothing at all.
+      expect(stops).toBeGreaterThan(5);
     });
 
     test('the sheet never covers the focused element with the on-screen keyboard open', async ({ page }, info) => {
@@ -126,7 +135,7 @@ for (const colorScheme of THEMES) {
 
       const { stops, sheetCovers } = await tabWalk(page);
       expect(sheetCovers, `sheet covered: ${sheetCovers.join(', ')}`).toEqual([]);
-      expect(stops).toBeGreaterThan(10);
+      expect(stops).toBeGreaterThan(5);
     });
 
     test('400% zoom (320 CSS px at 1×): no horizontal scroll opening the sheet, a disclosure, Recent and Settings', async ({

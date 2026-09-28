@@ -75,7 +75,9 @@ for (const colorScheme of THEMES) {
         new RegExp(`This network has used all ${META.lookupDailyCap} free lookups for today\\. They reset at \\d{1,2}:\\d{2}\\s?[AP]M\\.`),
       );
       await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
-      await expect(input(page)).toHaveValue('Another thing');
+      // Below 1024 px the error panel lives in the expanded sheet, which has no #lookup-input.
+      if (isDesktop(page)) await expect(input(page)).toHaveValue('Another thing');
+      else await expect(input(page)).toHaveCount(0);
     });
 
     test('S8 limit: the recent reference is a button that opens Recent below 1024 px', async ({ page }, testInfo) => {

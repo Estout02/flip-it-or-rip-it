@@ -103,9 +103,16 @@ const STATES: State[] = [
       await gotoApp(page);
       await submitQuery(page, 'Chrono Trigger SNES');
       await expect(page.locator('.result[aria-busy="true"]')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Checking…' })).toHaveAttribute('aria-disabled', 'true');
+      // Below 1024 px the lookup group (and its Check button) is unmounted while the sheet is
+      // expanded — no submitter to keep focus on or show aria-disabled (contracts rule 11).
+      if (isDesktop(page)) {
+        await expect(page.getByRole('button', { name: 'Checking…' })).toHaveAttribute('aria-disabled', 'true');
+      } else {
+        await expect(page.getByRole('button', { name: 'Checking…' })).toHaveCount(0);
+      }
     },
-    focus: '#lookup-input',
+    // Width-dependent, like S0: the submitter at desktop, the aria-busy loading region below it.
+    focus: (page) => (isDesktop(page) ? '#lookup-input' : '.result[aria-busy="true"]'),
   },
   { id: 'S2 FLIP', enter: result('flip'), focus: '#result-heading', forced: true },
   { id: 'S3 FLIP_RISKY', enter: result('risky'), focus: '#result-heading', forced: true },
@@ -555,6 +562,11 @@ test.describe('flagged concerns', () => {
     const problems: string[] = [];
     for (const c of controls) {
       const node = await axNode(page, `[data-e2e-idx="${c.idx}"]`);
+      // Chromium's AX tree doesn't expose every DOM-visible control in this state — the offscreen
+      // skip link and controls inside the (closed-to-AT) Recent dialog come back `ignored`. That's
+      // not a label-in-name failure to report; `controls.length > 8` below still guards against
+      // this silently shrinking the set that gets checked.
+      if (node.ignored) continue;
       if (node.role === 'textbox') continue; // named by <label>, no visible text inside
       const name = node.name ?? '';
       if (!name.trim()) problems.push(`[${c.visible}] has no accessible name`);

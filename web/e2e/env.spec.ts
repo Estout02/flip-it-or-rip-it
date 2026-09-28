@@ -67,7 +67,10 @@ for (const colorScheme of THEMES) {
       await mockApi(page, byQuery, PRODUCTION_META);
       await gotoApp(page);
       await expect(page.locator('.threshold .money')).toHaveText('$15.00');
-      await expect(page.locator('.env-badge')).toHaveCount(0);
+      // The badge's box always mounts now (reserves its header space from first paint) — in
+      // production it carries `env-badge--hidden` (`visibility: hidden`) rather than being absent.
+      await expect(page.locator('.env-badge')).toBeHidden();
+      await expect(page.locator('.env-badge')).toHaveAttribute('aria-hidden', 'true');
     });
 
     test('layout-shift guard: the badge appearing does not move the input or resize the header', async ({ page }) => {
@@ -75,7 +78,7 @@ for (const colorScheme of THEMES) {
       await page.goto('/');
       await input(page).click();
       await input(page).pressSequentially('Chrono');
-      await expect(page.locator('.env-badge')).toHaveCount(0);
+      await expect(page.locator('.env-badge')).toBeHidden();
 
       const inputBefore = await input(page).boundingBox();
       const headerBefore = await page.locator('header.chrome').boundingBox();
@@ -132,7 +135,7 @@ for (const colorScheme of THEMES) {
       await mockApi(page, byQuery, PRODUCTION_META);
       await page.reload();
       await expect(page.locator('.threshold .money')).toHaveText('$15.00');
-      await expect(page.locator('.env-badge')).toHaveCount(0);
+      await expect(page.locator('.env-badge')).toBeHidden();
 
       await openRecent(page);
       const recentButton = recentItems(page).first();

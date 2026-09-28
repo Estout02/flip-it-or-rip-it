@@ -5,6 +5,7 @@ import {
   expect,
   gotoApp,
   input,
+  isDesktop,
   lookupSequence,
   mockApi,
   openRecent,
@@ -52,11 +53,13 @@ for (const colorScheme of THEMES) {
 
       // ...and a new lookup explains the situation instead of failing silently.
       await page.getByRole('button', { name: 'Check another' }).click();
-      await expect(input(page)).toHaveValue(''); // wait out the clear's post-render effect (desktop keeps #lookup-input mounted)
+      await expect(input(page)).toHaveValue('');
       await submitQuery(page, 'Anything else');
       await expect(resultHeading(page)).toHaveText("You're offline");
       await expect(resultHeading(page)).toBeFocused();
-      await expect(input(page)).toHaveValue('Anything else');
+      // Below 1024 px the S10 error panel lives in the expanded sheet, which has no #lookup-input.
+      if (isDesktop(page)) await expect(input(page)).toHaveValue('Anything else');
+      else await expect(input(page)).toHaveCount(0);
     });
   });
 }
