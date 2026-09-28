@@ -164,6 +164,12 @@ export const recentItems = (page: Page) => page.locator('.recent-item');
 /** Types a query and presses Enter (the keyboard path). */
 export async function submitQuery(page: Page, query: string): Promise<void> {
   await input(page).fill(query);
+  // `fill` dispatches the native `input` event; Preact's controlled-input state update from it is
+  // not necessarily committed by the time `fill` resolves. Pressing Enter before it lands can
+  // submit against the (still empty) prior value, tripping the "Enter a barcode or item name"
+  // client-side validation instead of the query just typed. Waiting for the DOM value to actually
+  // read back what was filled pins that race closed — cheap when it's already true.
+  await expect(input(page)).toHaveValue(query);
   await input(page).press('Enter');
 }
 
@@ -268,7 +274,48 @@ export async function expectTargetSizes(page: Page): Promise<void> {
 export async function expectNoIncompleteContrast(page: Page): Promise<void> {
   const { incomplete } = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
   const contrastIncomplete = incomplete.filter((i) => i.id === 'color-contrast');
-  expect(contrastIncomplete, 'color-contrast reported as axe "incomplete"').toEqual([]);
+  const stillUnresolved: string[] = [];
+  for (const item of contrastIncomplete) {
+    for (const node of item.nodes) {
+      const target = node.target as string[];
+      const selector = target.join(' ');
+      // Most `incomplete` hits here are geometric false positives (`elmPartiallyObscured` /
+      // `elmPartiallyObscuring`, always `contrastRatio: 0`): the node's rect crossed the fixed,
+      // `overflow-y: auto` sheet's clip edge, or sat in a flex chrome bar whose child only
+      // partially covered the parent box, before axe ever got a settled layout to measure.
+      // Scrolling the node fully into view and re-running axe scoped to just it resolves those;
+      // a genuinely unresolvable case (a live <video>, a real translucent overlay) stays
+      // incomplete even after scrolling — `withVideoHidden` covers the video case separately, so
+      // this loop is what's left closing the hole for everything else.
+      try {
+        await page.locator(selector).first().scrollIntoViewIfNeeded({ timeout: 2000 });
+      } catch {
+        // Detached or zero-size nodes can't be scrolled; the re-run below settles it regardless.
+      }
+      const rerun = await new AxeBuilder({ page }).withTags(AXE_TAGS).include(target).analyze();
+      const nowViolates = rerun.violations.some((i) => i.id === 'color-contrast');
+      if (nowViolates) {
+        stillUnresolved.push(selector);
+        continue;
+      }
+      const stillIncomplete = rerun.incomplete.find((i) => i.id === 'color-contrast');
+      if (!stillIncomplete) continue; // resolved by the scroll
+
+      // Weaker fallback (documented per instruction, used only because measured necessary): the
+      // chrome bar's flex children (e.g. the Cancel button) report `elmPartiallyObscured` /
+      // `elmPartiallyObscuring` even after a full scroll-into-view — this one is a flex box-model
+      // partial-coverage quirk, not a scroll clip, so the re-check above can never resolve it.
+      // Accept that specific reason, but only on the chrome ground (`--chrome-fg` /
+      // `--chrome-secondary` / `--chrome-focus` on `--chrome-bg` — contrast-contract.ts C1-C3,
+      // already statically verified at 15.63 / 6.95 / 8.15:1). Any other reason, or an incomplete
+      // anywhere outside the chrome bar, still fails.
+      const reasons = (stillIncomplete.nodes[0]?.any ?? []).map((c) => c.data?.['messageKey'] ?? c.id);
+      const knownReason = reasons.length > 0 && reasons.every((r) => r === 'elmPartiallyObscured' || r === 'elmPartiallyObscuring');
+      const onChrome = await page.locator(selector).first().evaluate((el) => !!el.closest('.chrome'));
+      if (!(knownReason && onChrome)) stillUnresolved.push(selector);
+    }
+  }
+  expect(stillUnresolved, 'color-contrast still unresolved after scrolling the node into view').toEqual([]);
 }
 
 /** The full per-state bar: axe, no horizontal scroll, target sizes. Focus is asserted per state. */
@@ -475,19 +522,26 @@ export async function withVideoHidden<T>(page: Page, fn: () => Promise<T>): Prom
  * Toggles `prefers-reduced-transparency` via CDP (Playwright 1.63 has no first-class option for
  * it), reusing the `newCDPSession` pattern from `axNode`.
  */
+// Measured: detaching the CDP session that set `Emulation.setEmulatedMedia` reverts the override
+// immediately — Chromium ties this particular emulation to the session's lifetime, not the page.
+// A fresh session per call (the `axNode` pattern) therefore silently no-ops the very next
+// `matchMedia` read. One session, kept open and reused for every toggle on a given page, is what
+// actually lets `on` and `off` both take effect.
+const reducedTransparencySessions = new WeakMap<Page, Awaited<ReturnType<BrowserContext['newCDPSession']>>>();
+
 export async function emulateReducedTransparency(page: Page, on: boolean): Promise<void> {
-  const cdp = await page.context().newCDPSession(page);
-  try {
-    // Measured: omitting `media` (passing only `features`) leaves this Chromium build's media
-    // features unchanged — the override silently doesn't apply. Passing `media: ''` alongside
-    // `features` is what actually flips `matchMedia('(prefers-reduced-transparency: reduce)')`.
-    await cdp.send('Emulation.setEmulatedMedia', {
-      media: '',
-      features: on ? [{ name: 'prefers-reduced-transparency', value: 'reduce' }] : [],
-    });
-  } finally {
-    await cdp.detach();
+  let cdp = reducedTransparencySessions.get(page);
+  if (!cdp) {
+    cdp = await page.context().newCDPSession(page);
+    reducedTransparencySessions.set(page, cdp);
   }
+  // Measured: omitting `media` (passing only `features`) leaves this Chromium build's media
+  // features unchanged — the override silently doesn't apply. Passing `media: ''` alongside
+  // `features` is what actually flips `matchMedia('(prefers-reduced-transparency: reduce)')`.
+  await cdp.send('Emulation.setEmulatedMedia', {
+    media: '',
+    features: on ? [{ name: 'prefers-reduced-transparency', value: 'reduce' }] : [],
+  });
 }
 
 /** Every chrome element (bar, buttons, pill, env badge) must stay fully opaque (FR-016): legible

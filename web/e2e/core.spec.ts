@@ -462,8 +462,12 @@ test('submit → verdict does not regress (SC-007)', async ({ page }, testInfo) 
       return performance.now() - started;
     }, label);
     samples.push(ms);
-    // 4. Back to the lookup-ready state for the next cycle.
+    // 4. Back to the lookup-ready state for the next cycle. The clear itself runs in a
+    //    post-render effect, not synchronously with the click (app.tsx's `pendingFormAction`) —
+    //    waiting for it here is harness robustness around step 4, not part of the measured
+    //    window above, so it doesn't touch the recipe's timing.
     await page.getByRole('button', { name: 'Check another' }).click();
+    await expect(input(page)).toHaveValue('');
   }
 
   samples.sort((a, b) => a - b);
