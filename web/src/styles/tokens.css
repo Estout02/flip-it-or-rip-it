@@ -139,16 +139,24 @@
     color: ButtonText;
     border-color: ButtonText;
   }
-  /* The chrome bar sits over live video and must stay legible in forced colors too (FR-018): left
-     to auto-forcing it measured 1.08:1 (an auto-forced Canvas background under still-authored
-     chrome-fg text), so it takes the same explicit system pair as the buttons above, for the same
-     reason. (:root raises specificity over sheet.css, which declares .chrome/.chrome__btn plainly
-     and loads later.) */
-  :root .chrome,
+  /* The chrome bar's own background/text are left to auto-forcing, same as the pill and the
+     test-data chip below: `forced-color-adjust: none` is inherited, and pinning it on `.chrome`
+     previously opted its whole subtree out of forcing, so `.wordmark`'s own authored `--chrome-fg`
+     colour survived unforced against a system background (1.09:1 — color-contract.md rule 5). Only
+     `.chrome__btn` restates both of its own colours and keeps opting out; `.wordmark` and
+     `.env-badge` take literal system keywords instead (app.css), which is also what makes axe's
+     `-webkit-text-fill-color` read the right value (it never forces that property, only `color`). */
   :root .chrome__btn {
     forced-color-adjust: none;
     background-color: ButtonFace;
     color: ButtonText;
     border-color: ButtonText;
+  }
+  /* The scanning-status pill (viewfinder, not the chrome bar) is already correctly auto-forced —
+     axe's `-webkit-text-fill-color` quirk is the only reason it needs a literal keyword too.
+     (:root raises specificity over sheet.css, which declares `.pill` plainly and loads later.) */
+  :root .pill {
+    background-color: Canvas;
+    color: CanvasText;
   }
 }

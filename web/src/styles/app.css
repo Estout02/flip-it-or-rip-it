@@ -59,6 +59,15 @@
   fill: var(--tint-rip);
 }
 @media (forced-colors: active) {
+  /* `.wordmark` authors its own `color: var(--chrome-fg)` (below), which used to survive forced
+     colors unforced because tokens.css pinned `forced-color-adjust: none` on the ancestor `.chrome`
+     — an inherited property, so the whole header subtree opted out (color-contract.md rule 5). That
+     pin is gone from `.chrome` now; this restates the literal system keyword directly anyway, which
+     is also what makes axe's `-webkit-text-fill-color` read correctly (only `color` is re-forced,
+     never that legacy alias). `.wordmark__text` has no colour of its own, so it just inherits this. */
+  .wordmark {
+    color: ButtonText;
+  }
   .wordmark__flip,
   .wordmark__rip {
     fill: CanvasText;
@@ -98,9 +107,18 @@
   }
 }
 @media (forced-colors: active) {
+  /* Literal system keywords, not just a `forced-color-adjust: auto` reset: the badge was already
+     legible under auto-forcing, but axe's `-webkit-text-fill-color` read is only correct when the
+     colour is a system keyword rather than a forced custom property (same reasoning as `.wordmark`
+     above). Both visible spans get their own `color` too, not just the container, since text-fill
+     is what axe samples at the text node. */
   .env-badge {
+    background-color: Canvas;
+    color: CanvasText;
     border: 1px solid CanvasText;
-    forced-color-adjust: auto;
+  }
+  .env-badge span {
+    color: CanvasText;
   }
 }
 /* .env-note sits on the sheet ground beside a saved/history result — plain secondary text, never
@@ -839,6 +857,14 @@ span.suggestion {
 .chip--test {
   background: var(--chrome-bg);
   color: var(--chrome-fg);
+}
+@media (forced-colors: active) {
+  /* Same reasoning as `.wordmark`/`.env-badge` above: already legible under auto-forcing, but
+     axe's `-webkit-text-fill-color` read needs the literal keyword. */
+  .chip--test {
+    background-color: Canvas;
+    color: CanvasText;
+  }
 }
 
 /* Dialogs (Settings, the clear-history confirm): always opaque, never translucent. */
