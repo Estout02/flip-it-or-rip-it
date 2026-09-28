@@ -139,6 +139,23 @@
     color: ButtonText;
     border-color: ButtonText;
   }
+  /* The four verdict-tinted primaries (app.css `.capsule--x ~ .actions .btn--primary`, specificity
+     (0,3,0)) win the ordinary cascade over `:root .btn--primary` above (0,2,0), so in forced colors
+     they kept their own authored fill/border/label instead of the neutral system pair — founder's
+     call: respect the user's chosen palette here, the same as every other control; FLIP/RISKY/RIP
+     still read from the label and icon alone, not from this button's colour. Each `:root` prefix
+     below reaches (0,4,0), which wins. Same system keywords as the neutral pair, so axe reads them
+     through `-webkit-text-fill-color` too (only a system keyword, not a forced custom property,
+     satisfies that check — see the chrome-bar fix above). */
+  :root .capsule--flip ~ .actions .btn--primary,
+  :root .capsule--risky ~ .actions .btn--primary,
+  :root .capsule--rip ~ .actions .btn--primary,
+  :root .capsule--unc ~ .actions .btn--primary {
+    forced-color-adjust: none;
+    background-color: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+  }
   /* The chrome bar's own background/text are left to auto-forcing, same as the pill and the
      test-data chip below: `forced-color-adjust: none` is inherited, and pinning it on `.chrome`
      previously opted its whole subtree out of forcing, so `.wordmark`'s own authored `--chrome-fg`
