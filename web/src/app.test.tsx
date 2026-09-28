@@ -257,6 +257,23 @@ describe('App: S0 non-regression (T068, FR-024)', () => {
     expect(document.querySelectorAll('#result-heading')).toHaveLength(0);
   });
 
+  it('narrow loading: no heading and no Check button yet, so focus moves to the busy region itself, then relays to the heading once the verdict lands', async () => {
+    let resolve!: (r: Response) => void;
+    mockApi(() => new Promise<Response>((r) => (resolve = r)));
+    const { input } = renderApp();
+    typeAndSubmit(input, 'Chrono Trigger SNES');
+    const busy = await waitFor(() => {
+      const el = document.querySelector('.result[aria-busy="true"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(screen.queryByRole('button', { name: 'Checking…' })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(busy));
+    resolve(jsonResponse(flip));
+    const h = await heading('Flip it');
+    await waitFor(() => expect(document.activeElement).toBe(h));
+  });
+
   it('after a verdict is dismissed, the S0 heading and body are present again', async () => {
     mockApi(() => jsonResponse(flip));
     const { input } = renderApp();

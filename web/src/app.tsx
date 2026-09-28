@@ -391,6 +391,13 @@ export function App() {
                   onScan={canScan ? () => void openScanner() : undefined}
                   onScanNext={scanNext}
                   onOpenRecent={openRecent}
+                  // Below 1024px the expanded sheet is skeleton-only while loading — no Check
+                  // button exists yet (<LookupForm> only lives in the resting sheet) — so S1
+                  // itself takes focus (contracts/sheet-states.md S1 row, behaviour rule 11).
+                  // <LookupForm> is unmounted for the whole loading phase here, so this can't
+                  // race its own `autoFocus` effect; a Recent selection resolves straight to
+                  // 'success' (never 'loading'), so it can't race `closeRecent`'s focus either.
+                  focusLoading
                 />
               )}
             </Sheet>
