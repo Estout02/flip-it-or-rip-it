@@ -19,6 +19,13 @@ type SheetView = 'resting' | 'expanded';
 /** Which modal surface, if any, sits above the sheet. */
 type Overlay = 'none' | 'recent' | 'settings';
 
+/**
+ * The query the user has typed or scanned but not yet submitted. App owns it (founder decision,
+ * 2026-09-27) because re-parenting the lookup group remounts <LookupForm>, and below 1024 px that
+ * happens on every sheet collapse — including the S7 validation error the user is being asked to fix.
+ */
+type QueryDraft = string;
+
 /** One media query decides the whole layout difference (contracts/sheet-states.md). */
 const desktop: boolean = useMediaQuery('(min-width: 1024px)');
 ```
@@ -27,8 +34,9 @@ const desktop: boolean = useMediaQuery('(min-width: 1024px)');
 |---|---|---|
 | `ground` | App | `static` → `camera` on the Scan action (which mounts `<Viewfinder>`) → `static` on cancel / leaving the flow / page hidden / release (which unmounts it, aborting the stream); → `unavailable` when the Viewfinder reports `onFailure`. `lastCode` is set on each decode and drives the status pill |
 | `sheetView` | App | `resting` → `expanded` on submit (typed or scanned) and on selecting a Recent entry; `expanded` → `resting` on dismissal (visible control, Escape, back gesture) and on the skip link |
-| `overlay` | App | `none` ↔ `recent` (chrome control, S8 button) ↔ `settings` (chrome control, the minimum-profit "Edit" button); closing restores focus to the opener |
+| `overlay` | App | `none` ↔ `recent` (chrome control, S8 button) ↔ `settings` (chrome control, the minimum-profit "Edit" button). Closing restores focus to the opener — **except** when Recent closes because an entry was selected, where S12 wins and focus goes to `#result-heading` (`contracts/sheet-states.md` behaviour 10) |
 | `lookup` (`useLookup`) | `web/src/lib/use-lookup.ts` | **unchanged**: `idle → loading → success \| error` with the existing sequence guard |
+| `queryDraft` | App | set on every input event and on a decode; cleared by "Check another" / the dismissal that clears; read directly by submit, which removes the `pendingFormAction` race that could submit an empty query. `<LookupForm>` renders it as a controlled value and no longer holds the only copy |
 | `desktop` | `web/src/lib/use-media-query.ts` | `matchMedia('(min-width: 1024px)')` plus its `change` listener. Decides three things together: whether `.col-lookup` / `.col-recent` render at all, whether the lookup group sits in `.col-lookup` or in the resting sheet, and whether Recent is a pane or a modal sheet |
 
 **Invariants**

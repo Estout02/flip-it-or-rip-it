@@ -23,10 +23,23 @@ Everything else keeps one home at both widths. `<main id="main" class="layout">`
 ('(min-width: 1024px)')` value, which drives the column rendering and `RecentList`'s presentation
 together.
 
-**Accepted cost**: crossing 1024 px re-parents (and so remounts) `<LookupForm>`, losing text typed but
-not yet submitted, and re-running its desktop autofocus. Hoisting the draft query into App state
-would avoid it and is deliberately *not* done — a window resize across the breakpoint mid-typing is
-rare, and the alternative (two form instances, or duplicate `#lookup-input` ids) is worse.
+**The draft query lives in App state** (founder decision, 2026-09-27). Re-parenting `<LookupForm>`
+remounts it, so App owns the query string and passes it down as a controlled value; the form no longer
+holds the only copy of what the user typed.
+
+*Why this reversed the earlier position.* The first version of this contract accepted the loss and
+rejected hoisting, reasoning only about **crossing 1024 px** — a rare event. That missed the routine
+one: below 1024 px the lookup group is unmounted on **every collapse of the sheet**, so the form
+remounts after a validation error (S7 collapses the sheet to rest), after a dismissal, and after a
+Recent selection. A phone user's typed query was therefore lost at the exact moment they needed it —
+just after being told to fix it. Holding one string in App also removes the `pendingFormAction` race
+between "set the scanned value" and "submit", which could fire a submit with an empty query. The
+superseded reasoning is recorded here rather than deleted; the rejected alternatives (two form
+instances, or duplicate `#lookup-input` ids) stay rejected.
+
+*Scope of the decision*: the **query** string only. The optional "What I paid" text is not hoisted —
+it is cleared on every submit anyway — and the desktop autofocus still re-runs on a remount, which is
+harmless because it matches S0's documented desktop behaviour.
 
 ## Document structure (narrow viewports, < 1024 px)
 
@@ -170,7 +183,8 @@ is restored with CSS `order`/grid placement, never by moving the reason in the D
 | 006/007 state | New surface | Focus target | Announcement / title |
 |---|---|---|---|
 | **S0 empty** | `h2#result-heading` "Scan or type an item" + body, from the shared explainer component: **< 1024 px** at the top of the resting sheet, above the lookup group; **≥ 1024 px** in the middle pane (`ResultPanel`'s idle branch, as today) with the lookup group in `.col-lookup` | browser default < 1024 px; `#lookup-input` at ≥ 1024 px | none; title "Flip it or Rip it" |
-| **S1 loading** | sheet expands, skeleton, `aria-busy="true"`; Check shows the spinner and `aria-disabled` | unchanged (stays on the submitter) | polite "Checking…" |
+| **S1 loading — < 1024 px** | the sheet expands to the **skeleton only**. The lookup group is unmounted while the sheet is expanded, so there is **no Check button, no spinner and no `aria-disabled`** at this width — and no submitter for focus to stay on. Focus moves to the loading region: the `<section class="result" aria-label="Result" aria-busy="true" tabindex="-1">` that wraps the skeleton | the loading region (`.result[aria-busy="true"]`) | polite "Checking…" |
+| **S1 loading — ≥ 1024 px** | unchanged from 006: the form stays mounted in `.col-lookup`, so **Check shows the spinner and `aria-disabled="true"`** while the middle pane shows the skeleton with `aria-busy="true"` | unchanged (stays on the submitter) | polite "Checking…" |
 | **S2 FLIP / S3 FLIP_RISKY / S4 RIP** | expanded sheet, order above | `#result-heading` | title "{label} · Flip it or Rip it" |
 | **S5 UNCERTAIN** | expanded sheet: capsule (dashed edge) + reason, **no net figure and no caption**, suggestions list, "Closest match: …", collapsed `<details>` "Show rough figures (unreliable)" | `#result-heading` | as above; no donate/recycle words anywhere |
 | **S6 no market data** | expanded sheet: RIP capsule, overridden reason, **no net figure, no money rows**, sandbox sentence when non-production, "Check another" + "Try the item name instead" for barcode queries | `#result-heading` | as above |
@@ -178,7 +192,7 @@ is restored with CSS `order`/grid placement, never by moving the reason in the D
 | **S8 limit** | expanded sheet error panel; the recent line becomes a `<button class="btn-text">` with the same text, which opens the Recent sheet (< 1024 px) or focuses `#recent` (≥ 1024 px) | `#result-heading` | title unchanged; no Try again |
 | **S9 / S10 / S11** | expanded sheet error panel + "Try again" | `#result-heading` | — |
 | **S12 from history** | expanded sheet; the saved note and the test-data marker sit **on the sheet ground above the capsule**, and `#result-heading` keeps `aria-describedby` pointing at them | `#result-heading` | as S2–S6 |
-| **S13 Recent** | modal `<dialog class="sheet sheet--full">` opened from the chrome (< 1024 px) / third column (≥ 1024 px). Heading, entries, accessible names, empty state, storage notice and the Clear-history confirm are unchanged. Close control label: "Close" | on open: `#recent-heading`; on close: the chrome Recent button | polite storage notice unchanged |
+| **S13 Recent** | modal `<dialog class="sheet sheet--full">` opened from the chrome (< 1024 px) / third column (≥ 1024 px). Heading, entries, accessible names, empty state, storage notice and the Clear-history confirm are unchanged. Close control label: "Close" | on open: `#recent-heading`; on close via Close, Escape or the back gesture: the chrome Recent button. **When it closes because an entry was selected, S12 wins — see behaviour 10** | polite storage notice unchanged |
 | **S14 Settings** | unchanged modal `<dialog>`, restyled | `#threshold-input`; returns to the opener | "Saved" polite |
 | **S15 scanner (viewfinder)** | the **ground**, not a dialog: video + reticle + status pill; chrome Cancel releases the camera. At ≥ 1024 px the same component is the `.ground--card` at the top of `.col-lookup` | on entering the camera flow: the chrome **Cancel** button (the first chrome control after the pill) | polite "Scanned {code}. Checking…" on a read, `vibrate(50)`, unchanged |
 | **S15 scanner (unavailable)** | a notice at the top of the lookup group — the resting sheet < 1024 px, `.col-lookup` at ≥ 1024 px: `h2` "Camera not available" + the existing denied/unsupported/no-camera body + "Type it instead" | the "Type it instead" button | assertive, unchanged; ground falls back to static |
@@ -222,6 +236,21 @@ sheet, a grabber or a dismissal control at that width.
    and the page below it gets matching `scroll-padding-block-end`.
 8. **Reduced motion** (FR-020): no rise, slide or fade; the state simply exists.
 9. **Zero horizontal scroll** from 320 px to 1920 px and at 400 % zoom, in every state (SC-005).
+10. **Focus precedence when the Recent sheet closes.** Two rules meet here, and S12 outranks S13:
+    - closed **because an entry was selected** → S12 applies: focus lands on the restored result's
+      `#result-heading`, *not* on the chrome Recent button;
+    - closed via **Close, Escape or the back gesture** → S13 applies: focus returns to the control that
+      opened it.
+
+    Both rows were individually satisfiable while focus still went nowhere useful, which is why the
+    precedence is written down. Implementation note: the selection path must suppress the
+    opener-restore before the dialog closes — the same shape as `RecentList`'s existing `confirmed`
+    ref for the clear-history dialog, which already chooses between two focus targets on close.
+11. **S1's focus target is width-dependent** (see the two S1 rows): below 1024 px there is no Check
+    button to keep focus on, so focus moves to the `aria-busy` loading region, and when the result
+    arrives focus moves on to `#result-heading` inside that same region. At ≥ 1024 px focus never
+    leaves the submitter. An assertion that looks for a button named "Checking…" is therefore a
+    **desktop-only** assertion.
 
 ## Accessibility acceptance (per state)
 
@@ -234,7 +263,10 @@ result states:
    clean — this is what makes the worst-case composite an *asserted* fact and not a comment
    (see research R5);
 3. `document.documentElement.scrollWidth <= clientWidth`;
-4. the state's focus target is `document.activeElement`, before and after axe runs;
+4. the state's focus target is `document.activeElement`, before and after axe runs — for **S0 and
+   S1** that target is a function of width (S0: browser default vs `#lookup-input`; S1: the
+   `aria-busy` loading region vs the submitter), so the matrix must use its per-page `focus`
+   callback form for both, not a fixed selector;
 5. every visible interactive element ≥ 44 × 44 CSS px (inline prose links exempt at 24 px height);
 6. every chrome element's computed `background-color` has alpha = 1;
 7. the four verdicts differ by label text **and** `data-icon`, and the UNCERTAIN capsule's computed

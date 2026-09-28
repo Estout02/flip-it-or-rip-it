@@ -414,9 +414,19 @@ class="layout">` with `.col-lookup` / `.col-result` / `.col-recent`. The pinned 
   the top of `.col-lookup` instead of a full-bleed ground — one camera implementation, one lifecycle,
   two placements by media query.
 
-**Accepted cost**: crossing 1024 px remounts `<LookupForm>` (re-parented), losing unsubmitted text and
-re-running the desktop autofocus. Hoisting the draft into App state would avoid it; rejected as
-disproportionate, and two form instances (duplicate `#lookup-input`) would be worse.
+**The draft query is App state (founder decision, 2026-09-27 — this reverses the original note).**
+Re-parenting remounts `<LookupForm>`, so App owns the query string and passes it down as a controlled
+value.
+  - *Superseded position*: the first version of this section accepted losing unsubmitted text and
+    rejected hoisting as disproportionate, because it reasoned only about a **resize** across 1024 px.
+    That was the rare path. The routine one is that below 1024 px the lookup group unmounts on **every
+    sheet collapse** — after a validation error (S7 collapses to rest), after a dismissal, after a
+    Recent selection — so a phone user lost the query they had just been asked to correct.
+  - Holding one string in App also removes the `pendingFormAction` race between "set the scanned
+    value" and "submit", which could fire a submit with an empty query.
+  - Still rejected: two form instances or duplicate `#lookup-input` ids. Out of scope: the optional
+    "What I paid" text (cleared on every submit) and the desktop autofocus re-running on remount,
+    which matches S0's documented desktop behaviour.
 
 **Rationale**: 006 US5 must keep holding (side-by-side panes, full keyboard loop, no horizontal
 scroll), and a phone sheet centred in a 1440 px window was rejected by the founder. Keeping one
@@ -479,7 +489,10 @@ than a benchmark.
 `expanded`; dismissal sets `resting` **without aborting an in-flight lookup**. `ResultPanel` gains a
 `visible` prop and only moves focus to the verdict heading when it is `true`, so a result that lands
 after dismissal is written to history (Recent keeps it) but neither re-opens the sheet nor steals
-focus. `use-lookup.ts` is unchanged — its sequence-number guard already handles ordering.
+focus. The same gate covers the narrow-width S1 focus move onto the `aria-busy` loading region
+(`contracts/sheet-states.md` behaviour 11): it happens only while the sheet is visible, and the later
+move to `#result-heading` supersedes it inside the same region. `use-lookup.ts` is unchanged — its
+sequence-number guard already handles ordering.
 
 **Rationale**: the spec's edge case "a result arrives after the user has already dismissed the sheet:
 the stale result does not re-open the sheet". Aborting instead would waste a lookup the server has

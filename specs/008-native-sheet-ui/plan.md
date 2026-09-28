@@ -105,6 +105,8 @@ accepted on 2026-09-26 and whose lookup-cost risk is closed by FR-010.
 │   └─ <div class="col-result">
 │        └─ <Sheet presentation="bottom" view="resting|expanded">   (no aria-label*: ResultPanel keeps
 │                                                                 its own labelled `.result` section)
+│             NOTE: the lookup group is UNMOUNTED while expanded, so at this width S1 has no
+│             Check button and no spinner — focus moves to the aria-busy loading region instead
 │             resting:  S0 explainer (h2#result-heading) + THE LOOKUP GROUP
 │             expanded: <ResultPanel>        loading | result | error
 │               ├─ <VerdictBanner>           capsule (dot + label h2#result-heading) + reason + saved note
@@ -136,6 +138,15 @@ distinction** (the sheet is always expanded), **no grabber, no history entry and
 (`presentation="pane"`), and **no dismissal control** — the primary button stays "Check another".
 `#result-heading` exists at most once at any width: the S0 explainer is a shared component rendered by
 `ResultPanel`'s idle branch at desktop and by the resting sheet at narrow widths, never both.
+
+Two founder decisions of 2026-09-27 that follow from the re-parenting, both pinned in
+`contracts/sheet-states.md`: **S1 is width-dependent** — below 1024 px the expanded sheet is skeleton
+only (no Check button exists to carry a spinner, so focus moves to the `aria-busy` loading region),
+while at ≥ 1024 px the form stays mounted in `.col-lookup` and 006's spinner-plus-`aria-disabled`
+behaviour is unchanged. And **the draft query lives in App state**, reversing the plan's original
+"accepted cost": the lookup group unmounts on every narrow-width collapse, not just a resize, so the
+form was losing the user's text after every validation error — and one string in App also removes the
+`pendingFormAction` race that could submit an empty query.
 
 Full desktop tree, the seven pinned desktop rules, the state map, focus targets, announcements and the
 per-state acceptance bar: [`contracts/sheet-states.md`](./contracts/sheet-states.md).
