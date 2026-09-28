@@ -40,10 +40,12 @@
 }
 @media (max-width: 359.98px) {
   /* Room for the badge at 320 px (spec 007 FR-002): keep the logo mark; the h1's accessible name
-     is unchanged. `EnvBadge` renders nothing at all in production, so `.wordmark` only has an
-     `.env-badge` immediate sibling when the pill is actually present — no separate "badged" class
-     is needed on the header. */
-  .wordmark:has(+ .env-badge) .wordmark__text {
+     is unchanged. Unconditional — never keyed off the badge's presence. A `:has(+ .env-badge)`
+     coupling was tried here and reverted: it made the header's line count (and therefore its
+     height) a function of *when* `/api/meta` resolves, which is exactly the layout shift
+     contracts/sheet-states.md:185 forbids. The badge's own space is reserved separately
+     (`.env-badge` below), so the two rules never need to know about each other. */
+  .wordmark__text {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
@@ -94,6 +96,14 @@
   font-size: var(--step--1);
   font-weight: 700;
   line-height: 1.25;
+}
+/* Reserves the pill's exact box before `/api/meta` resolves (env undefined) and permanently in
+   production (env stays "production") — `EnvBadge` always mounts this markup now; only the
+   modifier changes. `visibility: hidden` keeps the layout footprint (unlike `display: none`, which
+   is what a conditional mount amounts to) while removing both the pixels and the accessibility
+   tree node, so a user never sees or hears anything different from before this fix. */
+.env-badge--hidden {
+  visibility: hidden;
 }
 @media (max-width: 479.98px) {
   /* Visually only: assistive technology still gets "— eBay sandbox" at every width (FR-002). */

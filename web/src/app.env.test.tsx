@@ -48,11 +48,17 @@ describe('environment badge (spec 007, US1; relocated by spec 008 T061)', () => 
     expect(document.querySelector('.chrome .env-badge')).not.toBeNull();
   });
 
+  // The pill's box is always mounted (it reserves its space before `/api/meta` resolves, and
+  // permanently in production — contracts/sheet-states.md:185); "no badge" now means hidden and
+  // unannounced, not absent from the DOM.
   it('shows no badge for a production environment', async () => {
     mockApi(() => jsonResponse(flip), PRODUCTION);
     renderApp();
     await screen.findByText('$15.00');
-    expect(document.querySelector('.env-badge')).toBeNull();
+    const badge = document.querySelector('.env-badge')!;
+    expect(badge).not.toBeNull();
+    expect(badge.classList.contains('env-badge--hidden')).toBe(true);
+    expect(badge.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('shows no badge when the environment is unknown (meta request failed)', async () => {
@@ -60,7 +66,10 @@ describe('environment badge (spec 007, US1; relocated by spec 008 T061)', () => 
     renderApp();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/meta'));
     await new Promise((r) => setTimeout(r, 0));
-    expect(document.querySelector('.env-badge')).toBeNull();
+    const badge = document.querySelector('.env-badge')!;
+    expect(badge).not.toBeNull();
+    expect(badge.classList.contains('env-badge--hidden')).toBe(true);
+    expect(badge.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('has 0 axe violations with the badge shown', async () => {
