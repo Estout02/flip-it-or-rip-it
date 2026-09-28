@@ -54,6 +54,11 @@ type Props = {
   onScanNext?: () => void;
   /** S8: when provided, the "recent lookups" link becomes a button that opens Recent as a sheet. */
   onOpenRecent?: (e: Event) => void;
+  /** Below 1024px (contract S1 row, behaviour rule 11) the expanded sheet is skeleton-only — no
+   * Check button exists yet — so S1 itself takes focus. At desktop the submitter stays focused
+   * (the form remains mounted in `.col-lookup`), so App passes this only at narrow width. Default
+   * `false` keeps desktop's behaviour without ResultPanel inspecting the viewport itself. */
+  focusLoading?: boolean;
 };
 
 export function ResultPanel({
@@ -67,8 +72,10 @@ export function ResultPanel({
   onScan,
   onScanNext,
   onOpenRecent,
+  focusLoading = false,
 }: Props) {
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const lastFocused = useRef<LookupState | null>(null);
 
   // New result or error panel → focus its heading (announced by the screen reader). A state
@@ -81,6 +88,16 @@ export function ResultPanel({
     lastFocused.current = shown;
     headingRef.current?.focus();
   }, [shown, visible]);
+
+  // S1 < 1024px (contract behaviour rule 11): loading begins → focus the busy region itself,
+  // since no heading and no Check button exist yet. Once the result lands, the effect above takes
+  // over and moves focus on to #result-heading inside the same region. Gated by `visible` too
+  // (R13) and by `focusLoading` so desktop — where the submitter should keep focus — is untouched.
+  useEffect(() => {
+    if (!focusLoading || !visible) return;
+    if (shown.status !== 'loading') return;
+    sectionRef.current?.focus();
+  }, [shown, visible, focusLoading]);
 
   useEffect(() => {
     document.title =
@@ -206,10 +223,12 @@ export function ResultPanel({
   const loading = shown.status === 'loading';
   return (
     <section
+      ref={sectionRef}
       class="result"
       aria-labelledby={loading ? undefined : RESULT_HEADING_ID}
       aria-label={loading ? 'Result' : undefined}
       aria-busy={loading ? 'true' : undefined}
+      tabIndex={loading ? -1 : undefined}
     >
       {body}
     </section>

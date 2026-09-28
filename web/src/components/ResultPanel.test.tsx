@@ -51,6 +51,44 @@ describe('ResultPanel', () => {
     expect(container.querySelector('#result-heading')).toBeNull();
   });
 
+  it('S1 loading, narrow width (focusLoading): the busy section takes focus', async () => {
+    const { container } = renderPanel({ status: 'loading', input: { title: 'x' } }, { focusLoading: true });
+    const section = container.querySelector('section')!;
+    expect(section.getAttribute('tabindex')).toBe('-1');
+    await waitFor(() => expect(document.activeElement).toBe(section));
+  });
+
+  it('S1 loading, desktop (focusLoading default false): the submitter keeps focus', async () => {
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    renderPanel({ status: 'loading', input: { title: 'x' } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(input);
+    input.remove();
+  });
+
+  it('S1 loading with focusLoading but not visible (R13): no focus theft', async () => {
+    const { container } = renderPanel(
+      { status: 'loading', input: { title: 'x' } },
+      { focusLoading: true, visible: false },
+    );
+    const section = container.querySelector('section')!;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).not.toBe(section);
+  });
+
+  it('S1 → result, narrow width: focus moves from the busy section on to #result-heading', async () => {
+    const { rerender, container, props } = renderPanel(
+      { status: 'loading', input: { title: 'x' } },
+      { focusLoading: true },
+    );
+    const section = container.querySelector('section')!;
+    await waitFor(() => expect(document.activeElement).toBe(section));
+    rerender(<ResultPanel {...props} shown={success(flip)} focusLoading />);
+    await waitFor(() => expect(document.activeElement?.id).toBe('result-heading'));
+  });
+
   describe('S8–S11 error panels', () => {
     it('S8 limit: heading, body and the #recent anchor (no onOpenRecent)', () => {
       renderPanel({ status: 'error', error: { kind: 'limit' }, input: {} });
