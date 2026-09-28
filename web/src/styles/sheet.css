@@ -113,7 +113,17 @@
   /* Opaque is the default; the glass ground is opt-in below (research R4) so legibility never
      depends on backdrop-filter support or on prefers-reduced-transparency, which iOS doesn't expose. */
   background: var(--sheet-opaque);
-  max-block-size: calc(100dvh - var(--kb-inset));
+  /* The fixed chrome bar sits above the sheet in the stacking order (z-index 20 vs. 10 below), so
+     letting the sheet grow into that band doesn't just look wrong — its top content is genuinely
+     covered and unreadable (axe correctly flags it: `color-contrast` `incomplete`,
+     `elmPartiallyObscuring`, at narrow widths where wrapped text makes resting/expanded content
+     tall enough to reach it, e.g. S12's saved-result note and S15's camera-unavailable copy at
+     320 px). Reserving the chrome's height here keeps the sheet's own overflow scroll — already in
+     place below — as the only way past that ceiling, the same way `.col-recent .recent` already
+     reserves it on desktop (layout.css). `.sheet--pane` (desktop) resets this to `none` and
+     `.sheet--full` (the Recent modal `<dialog>`) overrides it below: both are unaffected, since a
+     native `<dialog>` renders in the top layer, above the chrome regardless of z-index. */
+  max-block-size: calc(100dvh - var(--header-height, 4rem) - var(--kb-inset));
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-block-end: max(env(safe-area-inset-bottom, 0px), var(--kb-inset));
