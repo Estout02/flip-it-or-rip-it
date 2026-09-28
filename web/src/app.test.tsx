@@ -190,6 +190,25 @@ describe('App: errors (US6, T034)', () => {
     await screen.findByRole('dialog', { name: 'Recent' });
   });
 
+  it('S8: closing Recent (opened from the error panel, not the chrome) returns focus to that button, not the chrome Recent button (contracts/sheet-states.md rule 10)', async () => {
+    mockApi(() => jsonResponse({ error: 'limit-reached', message: 'x' }, 429));
+    const { input } = renderApp();
+    typeAndSubmit(input, 'Chrono Trigger SNES');
+    await heading("You've hit today's limit");
+
+    const chromeRecent = screen.getByRole('button', { name: 'Recent' });
+    const opener = screen.getByRole('button', { name: 'Your recent lookups are still here.' });
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole('dialog', { name: 'Recent' });
+    // jsdom's <dialog> polyfill doesn't implement native Escape-to-cancel (RecentList.test.tsx
+    // notes the same limitation; covered for real by e2e/errors.spec.ts) — Close exercises the
+    // same `onClose` path a real Escape would.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    // Not the chrome button: opening from a *different* control must not fall back to it.
+    expect(document.activeElement).not.toBe(chromeRecent);
+  });
+
   it.each([
     [503, "eBay isn't answering", 'This usually clears up in a few seconds.'],
     [500, 'Something went wrong', "It's on our side, not yours."],

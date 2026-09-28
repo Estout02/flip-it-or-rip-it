@@ -75,6 +75,12 @@ export function App() {
   const recentButtonRef = useRef<HTMLButtonElement>(null);
   const typeInsteadRef = useRef<HTMLButtonElement>(null);
   const settingsOpener = useRef<HTMLElement | null>(null);
+  // Recent is opened from two different controls — the chrome button and, on S8, the error
+  // panel's "Your recent lookups are still here." button — so a fixed `recentButtonRef` (which
+  // only ever points at the chrome one) can't be the close-focus target (contracts/sheet-states.md
+  // behaviour rule 10: focus returns to whichever control opened it). Same pattern as
+  // `settingsOpener` above: remember the real opener at open time.
+  const recentOpener = useRef<HTMLElement | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const loadingRef = useRef(false);
@@ -207,19 +213,31 @@ export function App() {
     settingsOpener.current?.focus();
   };
 
-  const openRecent = () => setOverlay('recent');
+  const openRecent = (e: Event) => {
+    recentOpener.current = e.currentTarget as HTMLElement;
+    setOverlay('recent');
+  };
   // `onClose` fires from the Recent `<dialog>`'s real `close` event (via `useModal`) — i.e. only
   // once the sheet has genuinely finished closing, never before. That's what makes it safe to move
   // focus to the result heading here: a modal `<dialog>` makes everything outside it inert, so
   // ResultPanel's own focus effect (which runs on the same commit as the selection, while the
   // dialog is still technically open) would silently no-op if it tried instead.
+  //
+  // The non-selection branch is the *only* place that moves focus back to the opener, and it now
+  // agrees with the real `<dialog>`'s own native restore-to-previously-focused-element behaviour
+  // (which our jsdom polyfill doesn't implement, but real browsers do): both target `recentOpener`,
+  // because that's genuinely what had focus when `showModal()` ran. Before this fix the two
+  // disagreed — this call always jumped to the chrome button, even when Recent had been opened from
+  // the S8 error panel's button — and the native restore only briefly, invisibly, got it right
+  // before this overwrote it a tick later. There is no longer a race to "win": recomputing the same
+  // target here is redundant with the native restore, not competing with it.
   const closeRecent = useCallback(() => {
     setOverlay('none');
     if (selectedFromRecent.current) {
       selectedFromRecent.current = false;
       document.getElementById(RESULT_HEADING_ID)?.focus();
     } else {
-      recentButtonRef.current?.focus();
+      recentOpener.current?.focus();
     }
   }, []);
 
