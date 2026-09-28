@@ -388,12 +388,23 @@ details[open] > summary::before {
 }
 /* DOM order carries the reading-order constraint (contracts/sheet-states.md); `order` restores
    the visual order: capsule, eyebrow, match, breakdown/suggestions, reason, rough/sandbox-note,
-   basis note, actions. */
+   basis note, actions. Both `.verdict__saved` and `.env-note` sit "on the sheet ground above the
+   capsule" (contracts/sheet-states.md S12) with no visual order mandated between the two, so
+   `.env-note` is placed one step ahead rather than tied with `.verdict__saved` at 0: measured
+   (env.spec.ts "history remembers the environment it was checked in", 320px, both themes,
+   deterministic) axe reports `#result-saved-note` as `color-contrast` `incomplete`
+   (`elmPartiallyObscuring`, `contrastRatio: 0`) whenever it is the first flex child tied at the
+   same `order` as a later DOM sibling that also renders — confirmed a pure axe engine artifact,
+   not a real overlap (removing the icon changed nothing; switching `.result__body` to `display:
+   block` — same content, same rects otherwise — clears it entirely; re-running full-page axe with
+   only this one-line change also comes back clean). Breaking the tie in either direction was
+   tried; only moving `.env-note` ahead (not `.verdict__saved` back) resolves it, so that's the
+   change kept here, with the exact same "above the capsule" placement preserved. */
 .verdict__saved {
   order: 0;
 }
 .env-note {
-  order: 0;
+  order: -1;
 }
 .capsule {
   order: 1;
