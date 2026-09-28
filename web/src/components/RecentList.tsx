@@ -125,17 +125,7 @@ export function RecentList({ history, storageOk, onSelect, onClear, presentation
                   type="button"
                   class="recent-item"
                   aria-label={`${test ? `${TEST_DATA_LABEL}: ` : ''}${copy.label}: ${title}, ${profit}, checked ${time}`}
-                  onClick={() => {
-                    // Selecting an entry from the sheet is about to hand focus to the new result
-                    // heading (ResultPanel's job, not ours). The native <dialog> restore-focus
-                    // algorithm only fires `close()` if focus is *still inside the dialog* at the
-                    // moment it closes — moving focus out synchronously, before the App reacts to
-                    // `onSelect` and closes us, means that when our own `close()` runs later it has
-                    // nothing to restore and the result heading's focus sticks. The Close/Escape
-                    // routes never call this, so returning focus to the opener there is untouched.
-                    if (presentation === 'sheet') (document.activeElement as HTMLElement | null)?.blur();
-                    onSelect(e);
-                  }}
+                  onClick={() => onSelect(e)}
                 >
                   {test && (
                     <span class="chip chip--test">

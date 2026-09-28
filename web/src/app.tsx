@@ -14,6 +14,7 @@ import { RecentList } from './components/RecentList';
 import { APP_TITLE, EmptyState, ResultPanel } from './components/ResultPanel';
 import { Sheet } from './components/Sheet';
 import { SettingsDialog } from './components/SettingsDialog';
+import { RESULT_HEADING_ID } from './components/VerdictBanner';
 import { announce } from './lib/announce';
 import { DEFAULT_META, getMeta } from './lib/api';
 import { formatCents } from './lib/money';
@@ -58,6 +59,12 @@ export function App() {
   const [ground, setGround] = useState<Ground>({ kind: 'static' });
   const [sheetView, setSheetView] = useState<'resting' | 'expanded'>('resting');
   const [overlay, setOverlay] = useState<Overlay>('none');
+  // Lifted out of <LookupForm> (which only lives in the resting sheet at narrow widths) so the
+  // draft text survives every resting ↔ expanded remount instead of being destroyed with it.
+  const [query, setQuery] = useState('');
+  // True once the sheet has ever expanded — the S0-vs-"return from a dismissal" distinction that
+  // decides whether the (re)mounted lookup input deserves focus (see `autoFocus` below).
+  const [everExpanded, setEverExpanded] = useState(false);
   const [ViewfinderView, setViewfinderView] = useState<FunctionComponent<ViewfinderProps> | null>(null);
   const [storageOk] = useState(() => storageAvailable());
   const [canScan] = useState(cameraCapable);
@@ -130,12 +137,19 @@ export function App() {
 
   // S7 (server validation): the result reverts to its pre-loading content, which the narrow sheet
   // has nowhere to show (the lookup group lives in the resting sheet, not the expanded one) — so
-  // collapse to rest, where the inline error is visible next to the input.
+  // collapse to rest, where the inline error is visible next to the input. The query is untouched:
+  // it lives in App state now, so this remount no longer wipes what the user typed.
   useEffect(() => {
     if (!desktop && lookup.state.status === 'error' && lookup.state.error.kind === 'validation') {
       setSheetView('resting');
     }
   }, [lookup.state, desktop]);
+
+  // Once the sheet has expanded at least once, every later return to rest deserves an input focus
+  // (it's a deliberate "back to typing" moment, not the initial page load).
+  useEffect(() => {
+    if (sheetView === 'expanded') setEverExpanded(true);
+  }, [sheetView]);
 
   const submit = useCallback(
     (input: Omit<LookupInput, 'profitThresholdCents'>) => {
@@ -148,30 +162,22 @@ export function App() {
     [lookup.submit],
   );
 
-  // Collapsing to rest over a static ground remounts `<LookupForm>` (it only lives in the resting
-  // sheet, T032) — so `formRef.current` is briefly null, and clearing/focusing it has to wait for
-  // the remount to land rather than run inline.
-  const pendingFormAction = useRef<'clear' | 'focus' | null>(null);
-  useEffect(() => {
-    if (sheetView !== 'resting' || !pendingFormAction.current) return;
-    const action = pendingFormAction.current;
-    pendingFormAction.current = null;
-    if (action === 'clear') formRef.current?.clear();
-    else formRef.current?.focusInput();
-  }, [sheetView]);
-
-  // Collapses the sheet, and — unless the camera is live — clears and focuses the input. Never
+  // Collapses the sheet, and — unless the camera is live — clears and refocuses the input. Never
   // touches the lookup machine (research R13): a request dismissed mid-flight keeps running and is
-  // still saved to history when it resolves.
+  // still saved to history when it resolves. Clearing is now an ordinary, ordered state write
+  // (`setQuery('')`) instead of an imperative call raced against `<LookupForm>`'s remount.
   const dismiss = useCallback(() => {
     setSheetView('resting');
     if (ground.kind === 'camera') {
       setGround((g) => (g.kind === 'camera' ? { ...g, lastCode: null } : g));
       cancelButtonRef.current?.focus();
     } else {
-      pendingFormAction.current = 'clear';
+      setQuery('');
+      lookup.clearFieldError();
+      formRef.current?.resetCost();
+      formRef.current?.focusInput();
     }
-  }, [ground.kind]);
+  }, [ground.kind, lookup.clearFieldError]);
 
   // The primary dismissal (R-D): unlike a bare Escape/back-gesture dismiss, "Check another"
   // resets the lookup machine back to idle — the fix that makes the resting/idle S0 copy return
@@ -201,18 +207,33 @@ export function App() {
   };
 
   const openRecent = () => setOverlay('recent');
+  // `onClose` fires from the Recent `<dialog>`'s real `close` event (via `useModal`) — i.e. only
+  // once the sheet has genuinely finished closing, never before. That's what makes it safe to move
+  // focus to the result heading here: a modal `<dialog>` makes everything outside it inert, so
+  // ResultPanel's own focus effect (which runs on the same commit as the selection, while the
+  // dialog is still technically open) would silently no-op if it tried instead.
   const closeRecent = useCallback(() => {
     setOverlay('none');
-    if (!selectedFromRecent.current) recentButtonRef.current?.focus();
-    selectedFromRecent.current = false;
+    if (selectedFromRecent.current) {
+      selectedFromRecent.current = false;
+      document.getElementById(RESULT_HEADING_ID)?.focus();
+    } else {
+      recentButtonRef.current?.focus();
+    }
   }, []);
 
-  const showEntry = useCallback((entry: HistoryEntry) => {
-    selectedFromRecent.current = true;
-    lookup.showEntry(entry);
-    setSheetView('expanded');
-    setOverlay('none');
-  }, [lookup.showEntry]);
+  const showEntry = useCallback(
+    (entry: HistoryEntry) => {
+      // Only narrow widths route through the Recent `<dialog>` and its `onClose` (closeRecent);
+      // arming this at desktop, where that never fires, would leave it stuck for a later narrow
+      // session after a resize.
+      if (!desktop) selectedFromRecent.current = true;
+      lookup.showEntry(entry);
+      setSheetView('expanded');
+      setOverlay('none');
+    },
+    [lookup.showEntry, desktop],
+  );
 
   // The viewfinder chunk (and its decoder) is imported only on the first Scan tap, so the typed
   // path never downloads it (FR-009, SC-004).
@@ -239,17 +260,17 @@ export function App() {
 
   const onCode = (code: string) => {
     setGround((g) => (g.kind === 'camera' ? { ...g, lastCode: code } : g));
-    const form = formRef.current;
-    if (!form) return;
-    form.setValue(code);
+    setQuery(code);
     navigator.vibrate?.(50);
     if (loadingRef.current) {
       // A lookup is already in flight: don't fire another; let the user verify the code.
       announce(`Scanned ${code}`, 'polite');
-      form.focusInput();
+      formRef.current?.focusInput();
       return;
     }
-    form.submit();
+    // `code` is passed explicitly rather than relying on the `setQuery` above having reached
+    // <LookupForm>'s props yet (it hasn't, within this same synchronous call).
+    formRef.current?.submit(code);
     setSheetView('expanded');
     // After submit, so "Checking…" doesn't replace the scan confirmation.
     announce(`Scanned ${code}. Checking…`, 'polite');
@@ -296,18 +317,20 @@ export function App() {
   const lookupForm = (
     <LookupForm
       handle={formRef}
+      query={query}
+      onQueryChange={setQuery}
       loading={lookup.state.status === 'loading'}
       serverError={lookup.fieldError}
       onFieldEdit={lookup.clearFieldError}
       onSubmit={submit}
       onScan={canScan ? () => void openScanner() : undefined}
+      autoFocus={desktop || everExpanded}
     />
   );
 
   const skipToInput = (e: Event) => {
     e.preventDefault();
     setSheetView('resting');
-    pendingFormAction.current = 'focus';
     formRef.current?.focusInput();
   };
 

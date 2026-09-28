@@ -133,7 +133,7 @@ describe('RecentList', () => {
   });
 
   describe('presentation="sheet" (R9, below 1024px)', () => {
-    function Harness() {
+    function Harness({ onSelect = vi.fn() }: { onSelect?: (e: (typeof history)[number]) => void } = {}) {
       const [open, setOpen] = useState(true);
       return (
         <>
@@ -143,7 +143,7 @@ describe('RecentList', () => {
           <RecentList
             history={history}
             storageOk
-            onSelect={vi.fn()}
+            onSelect={onSelect}
             onClear={vi.fn()}
             presentation="sheet"
             open={open}
@@ -164,20 +164,19 @@ describe('RecentList', () => {
       await waitFor(() => expect(document.activeElement).toBe(document.getElementById('recent-heading')));
     });
 
-    it('selecting an entry moves focus out of the dialog synchronously, before it closes', () => {
-      // Regression: the native <dialog> restores focus to the opener on close() only when focus
-      // is still inside the dialog at that moment. jsdom's polyfill (src/test/setup.ts) doesn't
-      // implement that restore at all, so it can't reproduce the theft itself — the bug only
-      // showed up in the real e2e matrix — but it can prove the half we control: the recent-item
-      // button is no longer the active element the instant it's clicked, before onSelect/onClose
-      // ever run, which is what starves the native restore of a focus target to steal back.
-      render(<Harness />);
+    it('selecting an entry calls onSelect and leaves focus/closing entirely to the caller (spec 008 B2)', () => {
+      // Post-select focus moved to App: it owns the "actually closed" signal (this dialog's real
+      // `close` event, via `onClose`) and only then moves focus to the result heading — a modal
+      // <dialog> makes everything outside it inert, so anything attempted earlier would silently
+      // no-op. RecentList's only job here is to report the selection; it neither blurs nor closes
+      // itself in response (App decides that by flipping `open`, exercised in app.test.tsx).
+      const onSelect = vi.fn();
+      render(<Harness onSelect={onSelect} />);
       const item = screen.getAllByRole('listitem')[0]!.querySelector('button')!;
       item.focus();
-      expect(document.activeElement).toBe(item);
       fireEvent.click(item);
-      expect(document.activeElement).not.toBe(item);
-      expect(document.querySelector('dialog.recent-sheet')!.contains(document.activeElement)).toBe(false);
+      expect(onSelect).toHaveBeenCalledWith(history[0]);
+      expect(document.activeElement).toBe(item);
     });
 
     it('has the same entries and accessible names as the pane', () => {

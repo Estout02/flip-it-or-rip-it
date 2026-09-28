@@ -1,19 +1,37 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import { createRef } from 'preact';
+import { useState } from 'preact/hooks';
 import { describe, expect, it, vi } from 'vitest';
 import { LiveRegion } from './LiveRegion';
 import { LookupForm, type LookupFormHandle } from './LookupForm';
 
+// The query is App-owned (spec 008 B1): this harness stands in for App, holding it locally so the
+// component under test behaves exactly as it does in the real tree (a controlled input).
 function setup(extra: Partial<Parameters<typeof LookupForm>[0]> = {}) {
   const onSubmit = vi.fn();
   const onFieldEdit = vi.fn();
   const handle = createRef<LookupFormHandle>();
-  const utils = render(
-    <>
-      <LiveRegion />
-      <LookupForm handle={handle} loading={false} serverError={null} onSubmit={onSubmit} onFieldEdit={onFieldEdit} {...extra} />
-    </>,
-  );
+
+  function Harness() {
+    const [query, setQuery] = useState(extra.query ?? '');
+    return (
+      <>
+        <LiveRegion />
+        <LookupForm
+          handle={handle}
+          loading={false}
+          serverError={null}
+          onSubmit={onSubmit}
+          onFieldEdit={onFieldEdit}
+          {...extra}
+          query={query}
+          onQueryChange={setQuery}
+        />
+      </>
+    );
+  }
+
+  const utils = render(<Harness />);
   const input = screen.getByLabelText('Barcode or item name') as HTMLInputElement;
   return { ...utils, input, onSubmit, onFieldEdit, handle };
 }
@@ -64,6 +82,15 @@ describe('LookupForm', () => {
     await waitFor(() => expect(document.activeElement).toBe(input));
   });
 
+  it('a server validation error does not wipe the query the way it once did (spec 008 B1)', async () => {
+    // Regression: the query used to live inside this component, so a parent-driven remount (the
+    // sheet collapsing back to rest on S7) would blank it. It's App state now, so the harness's
+    // `query` survives a `serverError` transition unchanged — nothing to assert on the component
+    // itself beyond the fact that it never resets `query` on its own.
+    const { input } = setup({ query: 'Chrono Trigger SNES' });
+    expect(input.value).toBe('Chrono Trigger SNES');
+  });
+
   it('What I paid: collapsed by default, parsed to cents, validated', () => {
     const { input, onSubmit, container } = setup();
     const details = container.querySelector('details.cost') as HTMLDetailsElement;
@@ -111,16 +138,37 @@ describe('LookupForm', () => {
     expect(scan.className).toBe('btn btn--scan');
   });
 
-  it('handle: setValue, clear (also clears cost) and focusInput', () => {
+  it('handle: focusInput moves focus to the input', () => {
     const { input, handle } = setup();
-    handle.current!.setValue('9780345391803');
-    return waitFor(() => expect(input.value).toBe('9780345391803')).then(async () => {
-      const cost = screen.getByLabelText('Amount paid ($)') as HTMLInputElement;
-      type(cost, '5');
-      handle.current!.clear();
-      await waitFor(() => expect(input.value).toBe(''));
-      expect(cost.value).toBe('');
-      expect(document.activeElement).toBe(input);
-    });
+    handle.current!.focusInput();
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('handle: submit(overrideQuery) validates and sends the override rather than the current query prop', () => {
+    // This is the fix for the "empty query" race (spec 008 B1): the caller has just called
+    // `onQueryChange` but that update hasn't reached this component's `query` prop yet within the
+    // same synchronous call, so `submit` must be able to bypass it.
+    const { onSubmit, handle } = setup({ query: '' });
+    handle.current!.submit('9780345391803');
+    expect(onSubmit).toHaveBeenLastCalledWith({ identifier: '9780345391803' });
+  });
+
+  it('handle: resetCost clears the cost field only — the query is the caller\'s to clear', async () => {
+    const { handle } = setup({ query: 'Chrono Trigger SNES' });
+    const cost = screen.getByLabelText('Amount paid ($)') as HTMLInputElement;
+    type(cost, '5');
+    handle.current!.resetCost();
+    await waitFor(() => expect(cost.value).toBe(''));
+    expect(screen.getByLabelText('Barcode or item name')).toHaveProperty('value', 'Chrono Trigger SNES');
+  });
+
+  it('autoFocus focuses the input once, on mount', () => {
+    const { input } = setup({ autoFocus: true });
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('without autoFocus, the input is not focused on mount', () => {
+    const { input } = setup();
+    expect(document.activeElement).not.toBe(input);
   });
 });
