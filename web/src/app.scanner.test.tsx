@@ -101,6 +101,34 @@ describe('App: lazy viewfinder', () => {
     await screen.findByRole('heading', { level: 2, name: "Can't tell" });
   });
 
+  it('"Scan the next one" keeps the camera ground mounted and focused on Cancel, not the input, so a second decode still starts its own lookup (SC-003 regression)', async () => {
+    // Regression: the resting sheet's <LookupForm> only remounts once the camera ground goes
+    // back to rest after a first result — and its `autoFocus` effect used to fire unconditionally
+    // whenever `everExpanded` was true, stealing focus from the chrome Cancel button AND, via the
+    // FR-011 focusin release trigger, releasing the live camera outright. A code decoded after
+    // that point never reached onCode again.
+    const { lookups } = mockApi((b) => jsonResponse(b.identifier === '9780345391803' ? flip : uncertain));
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Scan' }));
+    await waitFor(() => expect(document.querySelector('[data-fake-viewfinder]')).toBeTruthy());
+
+    viewfinderModule.lastProps!.onCode!('9780345391803');
+    await screen.findByRole('heading', { level: 2, name: 'Flip it' });
+    expect(lookups).toEqual([{ identifier: '9780345391803' }]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Scan the next one' }));
+
+    // The camera ground must still be live and the Cancel button focused, not the lookup input.
+    expect(document.querySelector('[data-fake-viewfinder]')).toBeTruthy();
+    expect(viewfinderModule.loads).toBe(1); // no re-import/remount of the viewfinder chunk
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' })));
+
+    // A second, different code must still start its own lookup.
+    viewfinderModule.lastProps!.onCode!('0012345678905');
+    await waitFor(() => expect(lookups).toEqual([{ identifier: '9780345391803' }, { identifier: '0012345678905' }]));
+    await screen.findByRole('heading', { level: 2, name: "Can't tell" });
+  });
+
   it("UNCERTAIN's scan suggestion starts the camera", async () => {
     mockApi(() => jsonResponse(uncertain));
     const { input } = renderApp();

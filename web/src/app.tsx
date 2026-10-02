@@ -346,7 +346,12 @@ export function App() {
       onFieldEdit={lookup.clearFieldError}
       onSubmit={submit}
       onScan={canScan ? () => void openScanner() : undefined}
-      autoFocus={desktop || everExpanded}
+      // Not while the camera ground is live: `scanNext`/`dismiss` return to the resting sheet
+      // (remounting this form) but focus the chrome Cancel button, not the input — the whole
+      // point is to keep decoding. Autofocusing here would steal that focus and, worse, fire the
+      // FR-011 focusin release trigger below, killing the live camera the instant "Scan the next
+      // one" is clicked (regression: SC-003's second-code-in-a-row loop).
+      autoFocus={desktop || (everExpanded && ground.kind !== 'camera')}
     />
   );
 
