@@ -71,6 +71,7 @@ export function App() {
   const [canScan] = useState(cameraCapable);
 
   const formRef = useRef<LookupFormHandle>(null);
+  const scanButtonRef = useRef<HTMLButtonElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const recentButtonRef = useRef<HTMLButtonElement>(null);
   const typeInsteadRef = useRef<HTMLButtonElement>(null);
@@ -186,13 +187,22 @@ export function App() {
     }
   }, [ground.kind, lookup.clearFieldError]);
 
-  // The primary dismissal (R-D): unlike a bare Escape/back-gesture dismiss, "Check another"
-  // resets the lookup machine back to idle — the fix that makes the resting/idle S0 copy return
-  // reliably (it previously only cleared the input, leaving the last verdict on screen at desktop).
+  // The secondary, always-available dismissal (R-D, contracts/copy-additions.md §3: "collapses to
+  // rest, clears the input, focuses it"). Unlike a bare Escape/back-gesture dismiss (`dismiss`,
+  // which keeps a live camera scanning) and unlike the camera-only primary "Scan the next one"
+  // (`scanNext`, which also keeps it live), "Check another" always releases the camera ground —
+  // it is the boring, unconditional way back to a blank typed lookup. It also resets the lookup
+  // machine back to idle, the fix that makes the resting/idle S0 copy return reliably (it
+  // previously only cleared the input, leaving the last verdict on screen at desktop).
   const checkAnother = useCallback(() => {
     lookup.reset();
-    dismiss();
-  }, [lookup.reset, dismiss]);
+    setSheetView('resting');
+    setGround((g) => (g.kind === 'camera' ? { kind: 'static' } : g));
+    setQuery('');
+    lookup.clearFieldError();
+    formRef.current?.resetCost();
+    formRef.current?.focusInput();
+  }, [lookup.reset, lookup.clearFieldError]);
 
   // R-D "camera" ground: dismiss to the live viewfinder; decoding resumes because lastCode clears.
   const scanNext = useCallback(() => {
@@ -270,7 +280,21 @@ export function App() {
     setGround({ kind: 'camera', lastCode: null });
   }, [ViewfinderView]);
 
-  const cancelCamera = () => setGround({ kind: 'static' });
+  // Chrome Cancel has no documented refocus target in contracts/sheet-states.md — the button
+  // itself unmounts the instant onCancelCamera runs (Header only renders it while the ground is
+  // camera), so without an explicit target focus silently drops to document.body (sheet-states.md
+  // behaviour rule 2: "Never document.body"). Resting: there's nothing to show but the lookup
+  // group, so Scan (the control that started this) gets focus back. Expanded: a result (or its
+  // loading skeleton) is what's visible, so the result region takes it instead, same as every
+  // other result-focus target in this file.
+  const cancelCamera = () => {
+    setGround({ kind: 'static' });
+    if (sheetView === 'expanded') {
+      (document.getElementById(RESULT_HEADING_ID) ?? document.querySelector<HTMLElement>('.result'))?.focus();
+    } else {
+      scanButtonRef.current?.focus();
+    }
+  };
 
   const typeInstead = () => {
     setGround({ kind: 'static' });
@@ -346,6 +370,7 @@ export function App() {
       onFieldEdit={lookup.clearFieldError}
       onSubmit={submit}
       onScan={canScan ? () => void openScanner() : undefined}
+      scanButtonRef={scanButtonRef}
       // Not while the camera ground is live: `scanNext`/`dismiss` return to the resting sheet
       // (remounting this form) but focus the chrome Cancel button, not the input — the whole
       // point is to keep decoding. Autofocusing here would steal that focus and, worse, fire the

@@ -261,8 +261,11 @@ for (const colorScheme of THEMES) {
         await page.waitForFunction(() => !!(window as unknown as { __scanStream?: MediaStream }).__scanStream);
         await cancel.click();
         await expect(page.locator('.ground--camera')).toHaveCount(0);
-        // Cancel (unlike Escape/dismiss elsewhere) has no documented refocus target — the button
-        // itself unmounts with the camera ground (contracts/sheet-states.md has no rule for it).
+        // Cancel's own button unmounts with the camera ground, so it can't keep focus itself
+        // (unlike Escape/dismiss elsewhere, contracts/sheet-states.md has no rule naming its
+        // target) — but focus must still land somewhere real, never document.body (behaviour
+        // rule 2). Resting here (no decode yet), so it returns to the control that started this.
+        await expect(scanButton(page)).toBeFocused();
         await expect
           .poll(
             () =>
