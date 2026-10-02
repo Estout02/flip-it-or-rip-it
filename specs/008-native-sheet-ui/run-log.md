@@ -28,3 +28,12 @@ Orchestrated by `/speckit-orchestrate`. Append-only; one line per phase or packa
 | 2026-09-27 07:12 | implement | WP10 | in-progress | sk-implementer a631784 | turn limit then session limit (reset 04:50 MDT); matrix had failures under analysis |
 | 2026-09-27 22:17 | fix | A1 forced-colors | done | sk-implementer a668f84 | 277 tests, 22.8 KB, typecheck clean |
 | 2026-09-27 22:57 | fix | A2 + N5 | done | sk-implementer a631784 | matrix 403 pass / 56 fail; SC-007 26.0 ms |
+| 2026-09-27 23:02 | fix | B3 badge layout-shift | done | sk-implementer a83fd4e | crossed into app.env.test.tsx (WP8 file) — flagged |
+| 2026-09-27 23:04 | fix | forced-colors verdict buttons | done | sk-implementer a668f84 | tokens.css only; hover-tie noted for review |
+| 2026-09-27 23:08 | fix | B1 + B2 | done | sk-implementer a58e091 | 283/283, typecheck clean, 22.8 KB |
+| 2026-09-27 23:24 | fix | B4 e2e corrections | done | sk-implementer a631784 | matrix 439 / 20 / 48; desktop 158/0; SC-007 26.5 ms |
+| 2026-09-28 07:47 | fix | S1 narrow loading focus | done | sk-implementer a7f80f3 + a58e091 | 288/288, typecheck clean, 22.8 KB |
+| 2026-09-28 07:50 | fix | sheet under chrome at 320px | done | sk-implementer a83fd4e | real overlap measured; 288/288 |
+| 2026-09-28 08:02 | fix | scanner loop SC-003 | done | sk-implementer a58e091 | 289/289; new test verified to fail without fix |
+| 2026-09-28 08:14 | fix | Recent close focus to opener | done | sk-implementer a58e091 | 290/290; test verified to fail without fix |
+| 2026-09-28 08:17 | fix | sandbox saved-note (axe flex artifact) | done | sk-implementer a83fd4e | no real overlap measured; sandbox-only order change |
