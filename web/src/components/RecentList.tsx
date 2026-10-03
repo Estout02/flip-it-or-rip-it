@@ -3,7 +3,6 @@
 // full-height modal sheet below it, opened from the chrome. The App decides which; this component
 // never queries the viewport itself.
 import type { ComponentChildren } from 'preact';
-import { createPortal } from 'preact/compat';
 import { useRef, useState } from 'preact/hooks';
 import type { HistoryEntry } from '../lib/types';
 import { useModal } from '../lib/use-modal';
@@ -165,14 +164,16 @@ export function RecentList({ history, storageOk, onSelect, onClear, presentation
             </button>
           </div>
         </dialog>
-        {/* Ported out to `document.body`, a sibling of the sheet dialog rather than a descendant
-            of it: two native `<dialog>`s both open via `showModal()`, one nested in the other,
-            paint correctly (confirm on top) but leave axe's color-contrast check unable to resolve
-            `#clear-title`'s background (`elmPartiallyObscuring` — it can't reconcile the ancestor
-            dialog's own top-layer promotion against the descendant's). Moving the confirm dialog
-            out of the sheet's DOM subtree removes the nested-dialog ambiguity entirely; `confirmRef`
-            still points at the same element, so focus/`useModal` are unaffected by where it renders. */}
-        {createPortal(clearHistoryConfirm, document.body)}
+        {/* A sibling of the sheet dialog, not a descendant of it: two native `<dialog>`s both open
+            via `showModal()`, one nested inside the other, paint correctly (confirm on top) but
+            leave axe's color-contrast check unable to resolve `#clear-title`'s background
+            (`elmPartiallyObscuring` — it can't reconcile the ancestor dialog's own top-layer
+            promotion against the descendant's). This component's sheet-presentation output is
+            already rendered inside App's root fragment (app.tsx), not inside the sheet `<dialog>`
+            itself, so returning it as a plain sibling here — no portal needed — keeps it out of
+            the sheet's DOM subtree and removes the nested-dialog ambiguity entirely; `confirmRef`
+            still points at the same element, so focus/`useModal` are unaffected. */}
+        {clearHistoryConfirm}
       </>
     );
   }

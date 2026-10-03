@@ -139,6 +139,18 @@
     color: ButtonText;
     border-color: ButtonText;
   }
+  /* `.btn:hover`/`.btn--primary:hover` in app.css paint an authored `--ink`/`--ground-static`
+     background at the same (0,2,0) specificity as the pair above and app.css loads after
+     tokens.css, so on a tie it wins the cascade — hovering Check, Save, Try again or the
+     confirm's Clear all re-painted an authored dark fill behind ButtonText, and on some forced
+     palettes that fill lands close enough to ButtonText to erase the label. Each selector here
+     reaches (0,3,0) by repeating `:root`, so it beats app.css's hover rules regardless of load
+     order and keeps the system button face on hover too. */
+  :root .btn:hover,
+  :root .btn--primary:hover {
+    background-color: ButtonFace;
+    box-shadow: none;
+  }
   /* The four verdict-tinted primaries (app.css `.capsule--x ~ .actions .btn--primary`, specificity
      (0,3,0)) win the ordinary cascade over `:root .btn--primary` above (0,2,0), so in forced colors
      they kept their own authored fill/border/label instead of the neutral system pair — founder's

@@ -133,7 +133,10 @@ describe('RecentList', () => {
   });
 
   describe('presentation="sheet" (R9, below 1024px)', () => {
-    function Harness({ onSelect = vi.fn() }: { onSelect?: (e: (typeof history)[number]) => void } = {}) {
+    function Harness({
+      onSelect = vi.fn(),
+      onClear = vi.fn(),
+    }: { onSelect?: (e: (typeof history)[number]) => void; onClear?: () => void } = {}) {
       const [open, setOpen] = useState(true);
       return (
         <>
@@ -144,7 +147,7 @@ describe('RecentList', () => {
             history={history}
             storageOk
             onSelect={onSelect}
-            onClear={vi.fn()}
+            onClear={onClear}
             presentation="sheet"
             open={open}
             onClose={() => {
@@ -211,6 +214,31 @@ describe('RecentList', () => {
       const confirm = screen.getByRole('dialog', { name: 'Clear all recent lookups on this device?' });
       await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(true));
       expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+    });
+
+    // The confirm dialog renders as a sibling of the sheet dialog, not nested inside it (it would
+    // otherwise be a native <dialog> nested in another open modal <dialog> — see the comment on
+    // RecentList's sheet-presentation return). Cancel and Clear both close it without the browser's
+    // native Escape path, so both routes are exercised here the same way the pane's are above.
+    it('Cancel returns focus to Clear history; Clear returns focus to the Recent heading', async () => {
+      const onClear = vi.fn();
+      render(<Harness onClear={onClear} />);
+      const clearHistoryBtn = screen.getByRole('button', { name: 'Clear history' });
+      fireEvent.click(clearHistoryBtn);
+      const confirm = screen.getByRole('dialog', { name: 'Clear all recent lookups on this device?' });
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(true));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(false));
+      expect(onClear).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(clearHistoryBtn);
+
+      fireEvent.click(clearHistoryBtn);
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(true));
+      fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(false));
+      expect(onClear).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Recent' }));
     });
 
     it('the Close button closes it and returns focus to the opener', async () => {
