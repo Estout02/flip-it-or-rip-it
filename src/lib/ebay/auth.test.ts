@@ -93,6 +93,39 @@ describe('EbayTokenManager', () => {
     const fetchFn = vi.fn().mockResolvedValue(new Response('nope', { status: 401 }));
     const manager = make(fetchFn);
 
-    await expect(manager.getToken()).rejects.toBeInstanceOf(EbayUnavailableError);
+    const err = await manager.getToken().catch((e) => e);
+    expect(err).toBeInstanceOf(EbayUnavailableError);
+    expect(err.cooldown).toBe(true);
+  });
+
+  it('a mint timeout maps to EbayUnavailableError with cooldown: false', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(
+      new DOMException('The operation was aborted.', 'TimeoutError'),
+    );
+    const manager = make(fetchFn);
+
+    const err = await manager.getToken().catch((e) => e);
+    expect(err).toBeInstanceOf(EbayUnavailableError);
+    expect(err.cooldown).toBe(false);
+  });
+
+  it('respects a configured timeoutMs', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const fetchFn = vi.fn(async (_url: unknown, init: unknown) => {
+      capturedSignal = (init as RequestInit).signal as AbortSignal;
+      return tokenResponse('tok-1');
+    }) as unknown as typeof fetch;
+    const manager = new EbayTokenManager({
+      env: 'sandbox',
+      clientId: 'test-id',
+      clientSecret: 'test-secret',
+      fetchFn,
+      timeoutMs: 5000,
+    });
+
+    await manager.getToken();
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal!.aborted).toBe(false);
   });
 });

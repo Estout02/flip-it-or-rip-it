@@ -92,8 +92,12 @@ function coalesce(
 
 /**
  * Wraps the raw client with the cost guards: every actual eBay call is checked
- * against the daily budget and counted; an eBay failure starts the cooldown.
- * Cache hits never reach this wrapper, so they cost nothing (FR-011).
+ * against the daily budget and counted; an eBay failure starts the cooldown —
+ * UNLESS the failure is a bare timeout (`cooldown: false`). A slow-but-alive
+ * eBay sandbox call (observed 2-4.5s) is not an outage signal and must not
+ * stop every other user's lookups for 30s; only a genuine refusal (429/5xx,
+ * unreachable host) does. Cache hits never reach this wrapper, so they cost
+ * nothing (FR-011).
  */
 function guardedClient(deps: PipelineDeps): EbayBrowseClient {
   const { browseClient, rateLimiter } = deps;
@@ -106,7 +110,7 @@ function guardedClient(deps: PipelineDeps): EbayBrowseClient {
       try {
         return await browseClient.search(query);
       } catch (err) {
-        if (err instanceof EbayUnavailableError) rateLimiter.startCooldown();
+        if (err instanceof EbayUnavailableError && err.cooldown) rateLimiter.startCooldown();
         throw err;
       }
     },

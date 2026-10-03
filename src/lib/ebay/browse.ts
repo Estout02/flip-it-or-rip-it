@@ -10,6 +10,7 @@
 import { EBAY_API_BASE, type EbayTokenManager } from './auth.js';
 import {
   EbayUnavailableError,
+  isTimeoutError,
   type EbayBrowseClient,
   type EbayEnv,
   type ListingSummary,
@@ -24,7 +25,10 @@ export interface BrowseClientOptions {
   timeoutMs?: number;
 }
 
-const DEFAULT_TIMEOUT_MS = 2000;
+// A hang guard, not a latency budget — the sandbox routinely takes 2-4.5s to
+// answer a search, and founder direction is that speed is a goal, never a
+// cutoff: this only protects against a connection that never resolves at all.
+const DEFAULT_TIMEOUT_MS = 15000;
 const SEARCH_LIMIT = 50;
 
 /** eBay prices arrive as USD decimal strings; convert to cents at the boundary. */
@@ -115,15 +119,32 @@ export class BrowseApiClient implements EbayBrowseClient {
     return { listings, totalActive };
   }
 
-  /** One retry for network-level failures only (never for HTTP error statuses). */
+  /**
+   * One retry for network-level failures only (never for HTTP error statuses).
+   * A timeout is NOT retried: it already waited the full hang-guard window
+   * once, so a retry would just double that wait for no benefit, and it is
+   * marked `cooldown: false` since a slow-but-alive host is not an outage.
+   */
   private async fetchWithNetworkRetry(url: string): Promise<Response> {
     try {
       return await this.doFetch(url);
     } catch (err) {
       if (err instanceof EbayUnavailableError) throw err;
+      if (isTimeoutError(err)) {
+        throw new EbayUnavailableError(
+          `eBay Browse search timed out after ${this.timeoutMs}ms`,
+          { cooldown: false },
+        );
+      }
       try {
         return await this.doFetch(url);
       } catch (retryErr) {
+        if (isTimeoutError(retryErr)) {
+          throw new EbayUnavailableError(
+            `eBay Browse search timed out after ${this.timeoutMs}ms`,
+            { cooldown: false },
+          );
+        }
         throw new EbayUnavailableError(
           `eBay unreachable: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
         );
