@@ -62,6 +62,9 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // Real-phone testing over a Cloudflare quick tunnel: the camera needs HTTPS, and Vite
+    // rejects unknown Host headers. Dev server only — production is served by the API.
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       '/api': 'http://api:3000',
       '/health': 'http://api:3000',
