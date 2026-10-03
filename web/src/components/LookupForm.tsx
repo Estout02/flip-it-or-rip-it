@@ -15,15 +15,17 @@ export const INPUT_ERROR_ID = 'lookup-error';
 
 export type LookupFormHandle = {
   focusInput(): void;
-  setValue(value: string): void;
-  /** Clears the query and the cost, then focuses the input ("Check another"). */
-  clear(): void;
-  /** Validates and submits the current value (used after a scan). */
-  submit(): void;
+  /** Clears the cost field only — the query lives in the caller's state (App) and is cleared
+   * there via `onQueryChange('')`, since this component no longer owns it. */
+  resetCost(): void;
 };
 
 type Props = {
   handle?: Ref<LookupFormHandle>;
+  /** The draft query text. Lifted into the caller's state (App) so it survives this component
+   * being unmounted and remounted as the sheet moves between resting and expanded. */
+  query: string;
+  onQueryChange(value: string): void;
   loading: boolean;
   /** Server-side validation message (S7). */
   serverError: string | null;
@@ -32,26 +34,38 @@ type Props = {
   /** Rendered only when the device can open a camera. */
   onScan?: () => void;
   scanButtonRef?: Ref<HTMLButtonElement>;
+  /** Focus the input as soon as it mounts — the caller knows *why* it's mounting (desktop, or
+   * returning to rest after a dismissal) in a way this component can't infer on its own. */
+  autoFocus?: boolean;
 };
 
-export function LookupForm({ handle, loading, serverError, onFieldEdit, onSubmit, onScan, scanButtonRef }: Props) {
-  const [value, setValue] = useState('');
+export function LookupForm({
+  handle,
+  query,
+  onQueryChange,
+  loading,
+  serverError,
+  onFieldEdit,
+  onSubmit,
+  onScan,
+  scanButtonRef,
+  autoFocus,
+}: Props) {
   const [cost, setCost] = useState('');
   const [costOpen, setCostOpen] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
   const [costError, setCostError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const costRef = useRef<HTMLInputElement>(null);
-  const valueRef = useRef(value);
-  valueRef.current = value;
-  const costValueRef = useRef(cost);
-  costValueRef.current = cost;
 
   const error = clientError ?? serverError;
 
-  // Autofocus only on wide screens: on phones it would pop the keyboard over Scan (S0).
+  // Mount-only: the caller decides whether this instance deserves focus on arrival (desktop, or a
+  // return to rest after "Check another"/Escape) — never on the very first paint at narrow widths,
+  // where it would pop the keyboard over Scan (S0).
   useEffect(() => {
-    if (typeof matchMedia === 'function' && matchMedia('(min-width: 1024px)').matches) inputRef.current?.focus();
+    if (autoFocus) inputRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // A server-side validation error: announce it and put the user back in the field.
@@ -61,8 +75,8 @@ export function LookupForm({ handle, loading, serverError, onFieldEdit, onSubmit
     inputRef.current?.focus();
   }, [serverError]);
 
-  const trySubmit = (query: string, costText: string) => {
-    const c = classify(query);
+  const trySubmit = (queryText: string, costText: string) => {
+    const c = classify(queryText);
     if (!c.ok) {
       setClientError(c.error);
       announce(c.error, 'assertive');
@@ -94,22 +108,12 @@ export function LookupForm({ handle, loading, serverError, onFieldEdit, onSubmit
     handle ?? null,
     () => ({
       focusInput: () => inputRef.current?.focus(),
-      setValue: (v: string) => {
-        setValue(v);
-        valueRef.current = v;
-        setClientError(null);
-      },
-      clear: () => {
-        setValue('');
+      resetCost: () => {
         setCost('');
-        setClientError(null);
         setCostError(null);
-        onFieldEdit();
-        inputRef.current?.focus();
       },
-      submit: () => trySubmit(valueRef.current, costValueRef.current),
     }),
-    [onFieldEdit, onSubmit],
+    [],
   );
 
   return (
@@ -119,7 +123,7 @@ export function LookupForm({ handle, loading, serverError, onFieldEdit, onSubmit
       noValidate
       onSubmit={(e) => {
         e.preventDefault();
-        trySubmit(value, cost);
+        trySubmit(query, cost);
       }}
     >
       <div class="field">
@@ -136,11 +140,11 @@ export function LookupForm({ handle, loading, serverError, onFieldEdit, onSubmit
           autocomplete="off"
           autoCapitalize="off"
           spellcheck={false}
-          value={value}
+          value={query}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? INPUT_ERROR_ID : undefined}
           onInput={(e) => {
-            setValue((e.currentTarget as HTMLInputElement).value);
+            onQueryChange((e.currentTarget as HTMLInputElement).value);
             if (clientError) setClientError(null);
             if (serverError) onFieldEdit();
           }}
@@ -171,7 +175,7 @@ export function LookupForm({ handle, loading, serverError, onFieldEdit, onSubmit
           {loading ? CHECKING : 'Check'}
         </button>
         {onScan && (
-          <button type="button" class="btn btn--scan scan-dock" ref={scanButtonRef} onClick={onScan}>
+          <button type="button" class="btn btn--scan" ref={scanButtonRef} onClick={onScan}>
             <Icon name="scan" />
             Scan
           </button>

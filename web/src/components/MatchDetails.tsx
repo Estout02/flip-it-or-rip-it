@@ -44,22 +44,24 @@ export function MatchDetails({ result, prefix = 'Matched', showCompetition = tru
           )}
         </>
       )}
-      {result.matchConfidence === 'MEDIUM' && result.verdict !== 'UNCERTAIN' && (
-        <p class="badge">
-          <Icon name="alert" class="icon--inline" />
-          {MEDIUM_MATCH_BADGE}
-        </p>
-      )}
-      {(showCompetition || result.matchedCategoryName) && (
-        <ul class="facts" role="list">
-          {result.matchedCategoryName && (
-            <li>
-              <span class="facts__term">Category</span> {result.matchedCategoryName}
-            </li>
-          )}
-          {showCompetition && <li>{competitionPhrase(result.liquidityTier, result.competingSupplyCount)}</li>}
-        </ul>
-      )}
+      <div class="match__meta">
+        {result.matchConfidence === 'MEDIUM' && result.verdict !== 'UNCERTAIN' && (
+          <p class="badge">
+            <Icon name="alert" class="icon--inline" />
+            {MEDIUM_MATCH_BADGE}
+          </p>
+        )}
+        {(showCompetition || result.matchedCategoryName) && (
+          <ul class="facts" role="list">
+            {result.matchedCategoryName && (
+              <li>
+                <span class="facts__term">Category</span> {result.matchedCategoryName}
+              </li>
+            )}
+            {showCompetition && <li>{competitionPhrase(result.liquidityTier, result.competingSupplyCount)}</li>}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

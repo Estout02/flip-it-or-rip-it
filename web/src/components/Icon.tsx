@@ -52,6 +52,7 @@ export function Icon({ name, class: className }: { name: IconName; class?: strin
   return (
     <svg
       class={className ? `icon ${className}` : 'icon'}
+      data-icon={name}
       viewBox="0 0 24 24"
       width="24"
       height="24"

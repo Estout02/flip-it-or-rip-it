@@ -1,5 +1,7 @@
-/* Component styles. Only token colors are used; every text/background pair is listed with its
-   verified contrast ratio in tokens.css. The verdict band is the only strongly colored element. */
+/* Content skins for the native sheet UI (spec 008-native-sheet-ui, WP9). The sheet shell, the
+   ground and the chrome bar live in sheet.css/base.css/layout.css (WP1/WP4) — this file owns only
+   what sits inside `.sheet__body`, the header's content (wordmark, env badge) and the two dialogs.
+   Every colour is a token from tokens.css; ratios are verified there and by contrast.test.ts. */
 
 /* ---------- Icons ---------- */
 .icon {
@@ -18,8 +20,11 @@
   inline-size: 1.05em;
   block-size: 1.05em;
 }
+.icon--solid {
+  fill: currentColor;
+}
 
-/* ---------- Header ---------- */
+/* ---------- Wordmark (T044/T045 carryover from WP4) ---------- */
 .wordmark {
   display: flex;
   align-items: center;
@@ -27,18 +32,44 @@
   font-size: var(--step-1);
   font-weight: 800;
   letter-spacing: -0.01em;
+  color: var(--chrome-fg);
 }
 .wordmark__mark {
   inline-size: 1.75rem;
   block-size: 1.75rem;
 }
+@media (max-width: 359.98px) {
+  /* Room for the badge at 320 px (spec 007 FR-002): keep the logo mark; the h1's accessible name
+     is unchanged. Unconditional — never keyed off the badge's presence. A `:has(+ .env-badge)`
+     coupling was tried here and reverted: it made the header's line count (and therefore its
+     height) a function of *when* `/api/meta` resolves, which is exactly the layout shift
+     contracts/sheet-states.md:185 forbids. The badge's own space is reserved separately
+     (`.env-badge` below), so the two rules never need to know about each other. */
+  .wordmark__text {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
 .wordmark__flip {
-  fill: var(--flip-fg);
+  fill: var(--tint-flip);
 }
 .wordmark__rip {
-  fill: var(--rip-fg);
+  fill: var(--tint-rip);
 }
 @media (forced-colors: active) {
+  /* `.wordmark` authors its own `color: var(--chrome-fg)` (below), which used to survive forced
+     colors unforced because tokens.css pinned `forced-color-adjust: none` on the ancestor `.chrome`
+     — an inherited property, so the whole header subtree opted out (color-contract.md rule 5). That
+     pin is gone from `.chrome` now; this restates the literal system keyword directly anyway, which
+     is also what makes axe's `-webkit-text-fill-color` read correctly (only `color` is re-forced,
+     never that legacy alias). `.wordmark__text` has no colour of its own, so it just inherits this. */
+  .wordmark {
+    color: ButtonText;
+  }
   .wordmark__flip,
   .wordmark__rip {
     fill: CanvasText;
@@ -48,48 +79,31 @@
   }
 }
 
-@media (max-width: 1023.98px) {
-  /* Icon-only on phones; the accessible name "Settings" remains. */
-  .header__settings-text {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-  .header__settings {
-    min-inline-size: var(--target);
-    padding-inline: var(--space-2);
-  }
-}
-
-/* ---------- Environment badge (spec 007, plan D3/D4) ---------- */
-.env-badge,
-.env-note,
-.chip--test {
-  background: var(--test-tint);
-  color: var(--test-fg);
-  border: 1.5px solid var(--test-border); /* solid: dashed is reserved for UNCERTAIN */
-}
-.env-badge,
-.env-note {
+/* ---------- Environment badge and note (T043/T045) ---------- */
+/* The badge lives in the chrome, over live video: it must read as a neutral chrome pill, never
+   the UNCERTAIN indigo, or it looks like a verdict (spec 007 D3/D4, US5-3). */
+.env-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  margin-inline-start: auto; /* hugs the Settings button */
   padding: 0.125rem var(--space-2);
   border-radius: var(--radius-sm);
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
   font-size: var(--step--1);
   font-weight: 700;
   line-height: 1.25;
 }
-.env-badge {
-  flex: 0 1 auto;
-  min-inline-size: 0;
-  margin-inline-start: auto; /* hugs the Settings button */
-}
-.env-note {
-  justify-self: start;
+/* Reserves the pill's exact box before `/api/meta` resolves (env undefined) and permanently in
+   production (env stays "production") — `EnvBadge` always mounts this markup now; only the
+   modifier changes. `visibility: hidden` keeps the layout footprint (unlike `display: none`, which
+   is what a conditional mount amounts to) while removing both the pixels and the accessibility
+   tree node, so a user never sees or hears anything different from before this fix. */
+.env-badge--hidden {
+  visibility: hidden;
 }
 @media (max-width: 479.98px) {
   /* Visually only: assistive technology still gets "— eBay sandbox" at every width (FR-002). */
@@ -102,23 +116,30 @@
     white-space: nowrap;
   }
 }
-@media (max-width: 359.98px) {
-  /* Room for the badge at 320 px: keep the logo mark; the h1's accessible name is unchanged. */
-  .app-header--badged .wordmark__text {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+@media (forced-colors: active) {
+  /* Literal system keywords, not just a `forced-color-adjust: auto` reset: the badge was already
+     legible under auto-forcing, but axe's `-webkit-text-fill-color` read is only correct when the
+     colour is a system keyword rather than a forced custom property (same reasoning as `.wordmark`
+     above). Both visible spans get their own `color` too, not just the container, since text-fill
+     is what axe samples at the text node. */
+  .env-badge {
+    background-color: Canvas;
+    color: CanvasText;
+    border: 1px solid CanvasText;
+  }
+  .env-badge span {
+    color: CanvasText;
   }
 }
-@media (forced-colors: active) {
-  .env-badge,
-  .env-note {
-    border: 1px solid CanvasText;
-    forced-color-adjust: auto;
-  }
+/* .env-note sits on the sheet ground beside a saved/history result — plain secondary text, never
+   a tinted pill (color-contract rule 1: --secondary on a light capsule fails; this sits outside
+   the capsule entirely, so it stays --secondary on the sheet, not chrome-tinted either). */
+.env-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--secondary);
+  font-size: var(--step--1);
 }
 
 /* ---------- Buttons ---------- */
@@ -130,10 +151,10 @@
   min-block-size: var(--target);
   min-inline-size: var(--target);
   padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--border-ui);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
+  background: var(--sheet-opaque);
+  color: var(--ink);
   font-weight: 600;
   line-height: 1.2;
   text-align: center;
@@ -142,32 +163,66 @@
     transform 120ms ease;
 }
 .btn:hover {
-  background: var(--bg);
+  background: var(--ground-static);
 }
 .btn:active {
   transform: translateY(1px);
 }
+/* The neutral primary pair (NB1): Check, Try again, dialog confirms — buttons with no verdict. */
 .btn--primary {
-  border-color: var(--btn-bg);
-  background: var(--btn-bg);
-  color: var(--btn-fg);
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet-opaque);
 }
 .btn--primary:hover {
-  background: var(--btn-bg);
+  background: var(--ink);
   box-shadow: inset 0 0 0 100vmax rgb(128 128 128 / 0.14);
+}
+/* The four verdict primaries: the dismissal/actions row that follows a result inherits that
+   verdict's fill, so "Check another"/"Scan the next one" read as belonging to the verdict just
+   shown. The 1 px tint border is what gives the dark fills a visible boundary (color-contract
+   D13-D16). Selected by the capsule sibling, never by profit sign (data-model "Verdict tint set"). */
+.capsule--flip ~ .actions .btn--primary {
+  background: var(--fill-flip);
+  border-color: var(--tint-flip);
+  color: var(--fill-label);
+}
+.capsule--risky ~ .actions .btn--primary {
+  background: var(--fill-risky);
+  border-color: var(--tint-risky);
+  color: var(--fill-label);
+}
+.capsule--rip ~ .actions .btn--primary {
+  background: var(--fill-rip);
+  border-color: var(--tint-rip);
+  color: var(--fill-label);
+}
+.capsule--unc ~ .actions .btn--primary {
+  background: var(--fill-unc);
+  border-color: var(--tint-unc);
+  color: var(--fill-label);
 }
 .btn--ghost {
   border-color: transparent;
   background: transparent;
 }
 .btn--ghost:hover {
-  background: var(--surface);
+  background: var(--sheet-opaque);
 }
 .btn--wide {
   flex: 1 1 auto;
 }
 .btn[aria-disabled='true'] {
   cursor: progress;
+}
+.btn--scan {
+  min-inline-size: 7rem;
+}
+@media (max-width: 1023.98px) {
+  .btn--scan {
+    min-block-size: 52px;
+    font-size: var(--step-1);
+  }
 }
 
 .btn-text {
@@ -179,7 +234,7 @@
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--text);
+  color: var(--ink);
   font-size: var(--step--1);
   font-weight: 600;
   text-decoration: underline;
@@ -209,23 +264,9 @@
 }
 
 .link {
-  color: var(--text);
+  color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 0.2em;
-}
-
-/* ---------- Cards ---------- */
-.card {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  padding: var(--space-4);
-}
-@media (min-width: 480px) {
-  .card {
-    padding: var(--space-5);
-  }
 }
 
 /* ---------- Form ---------- */
@@ -248,10 +289,10 @@
   inline-size: 100%;
   min-block-size: 48px;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-ui);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
+  background: var(--sheet-opaque);
+  color: var(--ink);
 }
 .input--lead {
   font-size: var(--step-1);
@@ -266,7 +307,7 @@
   font-weight: 600;
 }
 .field__help {
-  color: var(--text-muted);
+  color: var(--secondary);
   font-size: var(--step--1);
 }
 .money-input {
@@ -278,7 +319,7 @@
   inset-inline-start: var(--space-3);
   display: flex;
   align-items: center;
-  color: var(--text-muted);
+  color: var(--secondary);
   pointer-events: none;
 }
 .money-input .input {
@@ -318,15 +359,6 @@ details[open] > summary::before {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.btn--scan {
-  min-inline-size: 7rem;
-}
-@media (max-width: 1023.98px) {
-  .btn--scan {
-    min-block-size: 52px;
-    font-size: var(--step-1);
-  }
-}
 
 .threshold {
   display: flex;
@@ -335,20 +367,70 @@ details[open] > summary::before {
   justify-content: space-between;
   gap: var(--space-1) var(--space-3);
   padding: var(--space-2) var(--space-2) 0;
-  color: var(--text-muted);
+  color: var(--secondary);
   font-size: var(--step--1);
 }
 .threshold strong {
-  color: var(--text);
+  color: var(--ink);
+}
+.threshold__default {
+  color: var(--secondary);
 }
 
-/* ---------- Result ---------- */
+/* ---------- Result body: R-C order map (T043) ---------- */
 .result {
-  display: grid;
+  min-inline-size: 0;
 }
 .result__body {
-  display: grid;
-  gap: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+/* DOM order carries the reading-order constraint (contracts/sheet-states.md); `order` restores
+   the visual order: capsule, eyebrow, match, breakdown/suggestions, reason, rough/sandbox-note,
+   basis note, actions. Both `.verdict__saved` and `.env-note` sit "on the sheet ground above the
+   capsule" (contracts/sheet-states.md S12) with no visual order mandated between the two, so
+   `.env-note` is placed one step ahead rather than tied with `.verdict__saved` at 0: measured
+   (env.spec.ts "history remembers the environment it was checked in", 320px, both themes,
+   deterministic) axe reports `#result-saved-note` as `color-contrast` `incomplete`
+   (`elmPartiallyObscuring`, `contrastRatio: 0`) whenever it is the first flex child tied at the
+   same `order` as a later DOM sibling that also renders — confirmed a pure axe engine artifact,
+   not a real overlap (removing the icon changed nothing; switching `.result__body` to `display:
+   block` — same content, same rects otherwise — clears it entirely; re-running full-page axe with
+   only this one-line change also comes back clean). Breaking the tie in either direction was
+   tried; only moving `.env-note` ahead (not `.verdict__saved` back) resolves it, so that's the
+   change kept here, with the exact same "above the capsule" placement preserved. */
+.verdict__saved {
+  order: 0;
+}
+.env-note {
+  order: -1;
+}
+.capsule {
+  order: 1;
+}
+.verdict__eyebrow {
+  order: 2;
+}
+.match {
+  order: 3;
+}
+.breakdown,
+.suggestions {
+  order: 4;
+}
+.verdict__reason {
+  order: 5;
+}
+.rough,
+.sandbox-note {
+  order: 6;
+}
+.basis-note {
+  order: 7;
+}
+.actions {
+  order: 8;
 }
 @media (prefers-reduced-motion: no-preference) {
   .result-enter {
@@ -362,126 +444,106 @@ details[open] > summary::before {
   }
 }
 
-.empty {
-  display: grid;
+/* The verdict capsule: dot + icon + label only — never --secondary text (color-contract rule 1). */
+.capsule {
+  --cap-tint: var(--tint-rip);
+  --cap-bg: var(--caps-rip);
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-2);
-  padding-block: var(--space-4);
+  min-block-size: var(--target);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--cap-tint);
+  border-radius: var(--radius-pill);
+  background: var(--cap-bg);
 }
-.empty__heading {
-  font-size: var(--step-2);
+.capsule--flip {
+  --cap-tint: var(--tint-flip);
+  --cap-bg: var(--caps-flip);
 }
-.empty__body {
-  color: var(--text-muted);
-  max-inline-size: 36ch;
+.capsule--risky {
+  --cap-tint: var(--tint-risky);
+  --cap-bg: var(--caps-risky);
+}
+.capsule--rip {
+  --cap-tint: var(--tint-rip);
+  --cap-bg: var(--caps-rip);
+}
+.capsule--unc {
+  --cap-tint: var(--tint-unc);
+  --cap-bg: var(--caps-unc);
+  border-style: dashed;
+  border-width: 2px;
+}
+.capsule__dot {
+  inline-size: 10px;
+  block-size: 10px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--cap-tint);
+}
+.capsule__icon {
+  color: var(--cap-tint);
+}
+.capsule__label {
+  color: var(--ink);
+  font-size: var(--step-1);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-.skeleton {
-  display: grid;
-  gap: var(--space-3);
+.verdict__reason {
+  color: var(--ink);
+  font-size: var(--step-0);
 }
-.skeleton > * {
-  border-radius: var(--radius-sm);
-  background: var(--border-subtle);
-}
-.skeleton__band {
-  block-size: 8rem;
-  border-radius: var(--radius-lg) !important;
-}
-.skeleton__line {
-  block-size: 1rem;
-  inline-size: 60%;
-}
-.skeleton__line--wide {
-  inline-size: 85%;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .skeleton > * {
-    animation: pulse 1.2s ease-in-out infinite alternate;
-  }
-}
-@keyframes pulse {
-  to {
-    opacity: 0.45;
-  }
-}
-
-/* The verdict band: text + icon + color (never color alone). */
-.verdict {
-  --v-fg: var(--text);
-  --v-tint: var(--bg);
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-3) var(--space-4);
-  padding: var(--space-5);
-  border-radius: var(--radius-lg);
-  background: var(--v-tint);
-}
-.verdict--flip {
-  --v-fg: var(--flip-fg);
-  --v-tint: var(--flip-tint);
-}
-.verdict--risky {
-  --v-fg: var(--risky-fg);
-  --v-tint: var(--risky-tint);
-}
-.verdict--rip {
-  --v-fg: var(--rip-fg);
-  --v-tint: var(--rip-tint);
-}
-.verdict--unc {
-  --v-fg: var(--unc-fg);
-  --v-tint: var(--unc-tint);
-  border: 2px dashed var(--unc-fg);
-}
-.verdict__icon {
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
-  margin-block-start: var(--space-1);
-  color: var(--v-fg);
-}
-.verdict__text {
-  display: grid;
-  gap: var(--space-1);
+.verdict__eyebrow,
+.verdict__saved {
+  color: var(--secondary);
+  font-size: var(--step--1);
 }
 .verdict__eyebrow {
-  color: var(--v-fg);
-  font-size: var(--step--1);
   font-weight: 700;
   letter-spacing: 0.01em;
 }
 .verdict__saved {
-  color: var(--text-muted);
-  font-size: var(--step--1);
-}
-.verdict__label {
-  color: var(--v-fg);
-  font-size: var(--step-4);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
-}
-.verdict__reason {
-  margin-block-start: var(--space-1);
-  color: var(--text);
-}
-@media (max-width: 359.98px) {
-  .verdict {
-    grid-template-columns: minmax(0, 1fr);
-    padding: var(--space-4);
-  }
+  display: flex;
+  align-items: center;
 }
 
+/* ---------- Money and match (T044) ----------
+   No tint below 24 px anywhere in this file (FR-015): .net__figure (--text-net, 38px) is the only
+   tinted text, and it inherits the verdict tint from the capsule that always precedes it in the
+   DOM, never from profit sign (data-model "Verdict tint set"). */
 .breakdown {
   display: grid;
   gap: var(--space-3);
 }
-.hero-profit {
-  font-size: var(--step-3);
-  font-weight: 800;
+.breakdown__note {
+  color: var(--secondary);
+  font-size: var(--step--1);
+}
+.net {
+  display: grid;
+  gap: var(--space-1);
+}
+.net__figure {
+  font-size: var(--text-net);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
   letter-spacing: -0.01em;
 }
-.breakdown__note {
-  color: var(--text-muted);
+.capsule--flip ~ .breakdown .net__figure {
+  color: var(--tint-flip);
+}
+.capsule--risky ~ .breakdown .net__figure {
+  color: var(--tint-risky);
+}
+.capsule--rip ~ .breakdown .net__figure {
+  color: var(--tint-rip);
+}
+.net__caption {
+  color: var(--secondary);
   font-size: var(--step--1);
 }
 .figures {
@@ -492,24 +554,15 @@ details[open] > summary::before {
   justify-content: space-between;
   gap: var(--space-4);
   padding-block: var(--space-2);
-  border-block-end: 1px solid var(--border-subtle);
+  border-block-end: 1px solid var(--hairline);
 }
 .figures__row dt {
-  color: var(--text-muted);
+  color: var(--secondary);
 }
 .figures__row dd {
   text-align: end;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-.figures__row--total {
-  margin-block-start: var(--space-1);
-  border-block-start: 2px solid var(--text);
-  border-block-end: 0;
-  font-weight: 700;
-}
-.figures__row--total dt {
-  color: var(--text);
 }
 
 .match {
@@ -521,8 +574,13 @@ details[open] > summary::before {
   font-weight: 600;
 }
 .match__prefix {
-  color: var(--text-muted);
+  color: var(--secondary);
   font-weight: 400;
+}
+.match__name {
+  font-size: var(--text-name);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 @media (max-width: 1023.98px) {
   .match__title--clamp {
@@ -541,15 +599,11 @@ details[open] > summary::before {
 .match__toggle {
   margin-inline-start: calc(var(--space-2) * -1);
 }
-.badge {
-  display: inline-flex;
+.match__meta {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: var(--space-1) var(--space-3);
-  border-radius: 999px;
-  background: var(--unc-tint);
-  color: var(--text);
-  font-size: var(--step--1);
-  font-weight: 600;
+  gap: var(--space-1) var(--space-3);
 }
 .facts {
   display: flex;
@@ -557,8 +611,17 @@ details[open] > summary::before {
   gap: var(--space-1) var(--space-4);
   margin: 0;
   padding: 0;
-  color: var(--text-muted);
+  color: var(--secondary);
   font-size: var(--step--1);
+}
+/* Decorative separator only — never the sole carrier of meaning (color-contract rule 4 pattern):
+   the facts themselves are already distinguished by their own text. */
+.facts li + li {
+  position: relative;
+}
+.facts li + li::before {
+  content: '·';
+  margin-inline-end: var(--space-1);
 }
 .facts__term {
   font-weight: 600;
@@ -566,8 +629,12 @@ details[open] > summary::before {
 
 .basis-note {
   padding-block-start: var(--space-3);
-  border-block-start: 1px solid var(--border-subtle);
-  color: var(--text-muted);
+  border-block-start: 1px solid var(--hairline);
+  color: var(--secondary);
+  font-size: var(--step--1);
+}
+.sandbox-note {
+  color: var(--secondary);
   font-size: var(--step--1);
 }
 
@@ -575,6 +642,20 @@ details[open] > summary::before {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* ---------- Controls: badge, chip, suggestions, rough (T045) ---------- */
+/* The medium-confidence match badge is a caution, not a verdict: it stays neutral so it can never
+   be mistaken for the UNCERTAIN tint. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-pill);
+  color: var(--secondary);
+  font-size: var(--step--1);
+  font-weight: 600;
 }
 
 .suggestions {
@@ -594,23 +675,24 @@ details[open] > summary::before {
 }
 span.suggestion {
   padding-inline: var(--space-4);
-  color: var(--text);
+  color: var(--ink);
 }
 .suggestion .icon {
-  color: var(--text-muted);
+  color: var(--secondary);
 }
 
 .rough {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-1) var(--space-4) var(--space-2);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
 }
 .rough[open] {
   padding-block-end: var(--space-4);
 }
 
+/* ---------- Error states ---------- */
 .error-panel {
   display: grid;
   gap: var(--space-3);
@@ -633,7 +715,63 @@ span.suggestion {
   min-block-size: var(--target);
 }
 
-/* ---------- Recent ---------- */
+/* ---------- Empty and loading states (T047) ---------- */
+.empty {
+  display: grid;
+  gap: var(--space-2);
+  padding-block: var(--space-4);
+}
+.empty__heading {
+  font-size: var(--step-2);
+}
+.empty__body {
+  color: var(--secondary);
+  max-inline-size: 36ch;
+}
+
+.skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+.skeleton > * {
+  border-radius: var(--radius-sm);
+  background: var(--hairline);
+}
+.skeleton__band {
+  block-size: 8rem;
+  border-radius: var(--radius-card) !important;
+}
+.skeleton__line {
+  block-size: 1rem;
+  inline-size: 60%;
+}
+.skeleton__line--wide {
+  inline-size: 85%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton > * {
+    animation: pulse 1.2s ease-in-out infinite alternate;
+  }
+}
+@keyframes pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+
+/* The T034 notice inside the resting sheet when the camera is unavailable. */
+.camera-notice {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding-block: var(--space-2);
+  color: var(--ink);
+}
+.camera-notice .icon {
+  color: var(--danger);
+}
+
+/* ---------- Recent and dialogs (T046) ---------- */
 .recent {
   display: grid;
   gap: var(--space-3);
@@ -653,7 +791,7 @@ span.suggestion {
 }
 .recent__empty,
 .recent__notice {
-  color: var(--text-muted);
+  color: var(--secondary);
   font-size: var(--step--1);
 }
 .recent__list {
@@ -662,7 +800,7 @@ span.suggestion {
   padding: 0;
 }
 .recent__list > li + li {
-  border-block-start: 1px solid var(--border-subtle);
+  border-block-start: 1px solid var(--hairline);
 }
 .recent-item {
   display: grid;
@@ -677,7 +815,7 @@ span.suggestion {
   text-align: start;
 }
 .recent-item:hover {
-  background: var(--bg);
+  background: var(--ground-static);
 }
 .recent-item__title {
   inline-size: 100%;
@@ -687,51 +825,86 @@ span.suggestion {
   font-weight: 600;
 }
 .recent-item__meta {
-  color: var(--text-muted);
+  color: var(--secondary);
   font-size: var(--step--1);
 }
+
+/* Verdict chips (Recent rows): the same quartet as the capsule, at chip scale. The label text is
+   always --ink (color-contract rule 2: no tint below 24 px — this chip's text sits at --step--1,
+   well under the threshold, so the tint carries only the fill and the icon, never the label,
+   exactly like the capsule's dot/icon-vs-label split). */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   padding: 0.1rem var(--space-2);
-  border-radius: 999px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  color: var(--ink);
   font-size: var(--step--1);
   font-weight: 700;
 }
 .chip--flip {
-  background: var(--flip-tint);
-  color: var(--flip-fg);
+  background: var(--caps-flip);
+  border-color: var(--tint-flip);
+}
+.chip--flip .icon {
+  color: var(--tint-flip);
 }
 .chip--risky {
-  background: var(--risky-tint);
-  color: var(--risky-fg);
+  background: var(--caps-risky);
+  border-color: var(--tint-risky);
+}
+.chip--risky .icon {
+  color: var(--tint-risky);
 }
 .chip--rip {
-  background: var(--rip-tint);
-  color: var(--rip-fg);
+  background: var(--caps-rip);
+  border-color: var(--tint-rip);
+}
+.chip--rip .icon {
+  color: var(--tint-rip);
 }
 .chip--unc {
-  background: var(--unc-tint);
-  color: var(--unc-fg);
-  outline: 1px dashed var(--unc-fg);
-  outline-offset: -1px;
+  background: var(--caps-unc);
+  border-style: dashed;
+  border-color: var(--tint-unc);
+}
+.chip--unc .icon {
+  color: var(--tint-unc);
+}
+/* Test-data chip: the same neutral chrome treatment as the header badge — never the UNCERTAIN
+   indigo, so a sandbox-checked row can't be misread as a verdict. */
+.chip--test {
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
+}
+@media (forced-colors: active) {
+  /* Same reasoning as `.wordmark`/`.env-badge` above: already legible under auto-forcing, but
+     axe's `-webkit-text-fill-color` read needs the literal keyword. */
+  .chip--test {
+    background-color: Canvas;
+    color: CanvasText;
+  }
 }
 
-/* ---------- Dialogs ---------- */
+/* Dialogs (Settings, the clear-history confirm): always opaque, never translucent. */
 .dialog {
   inline-size: min(28rem, calc(100vw - 2 * var(--space-4)));
   max-block-size: calc(100dvh - 2 * var(--space-4));
   margin: auto;
   padding: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  color: var(--text);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--sheet-opaque);
+  color: var(--ink);
   box-shadow: 0 20px 60px rgb(0 0 0 / 0.3);
 }
 .dialog::backdrop {
   background: rgb(14 16 18 / 0.55);
+}
+.dialog--small {
+  inline-size: min(24rem, calc(100vw - 2 * var(--space-4)));
 }
 .dialog__body {
   display: grid;
@@ -752,85 +925,6 @@ span.suggestion {
   }
 }
 
-/* ---------- Scanner ----------
-   The camera view is always dark: white (#fff) on black (#000) is 21:1. */
-.scanner {
-  inline-size: 100vw;
-  block-size: 100dvh;
-  max-inline-size: none;
-  max-block-size: none;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: #000;
-  color: #fff;
-}
-.scanner[open] {
-  display: flex;
-  flex-direction: column;
-}
-.scanner::backdrop {
-  background: #000;
-}
-.scanner__stage {
-  position: relative;
-  flex: 1 1 auto;
-  min-block-size: 0;
-  overflow: hidden;
-}
-.scanner__video {
-  inline-size: 100%;
-  block-size: 100%;
-  max-inline-size: none;
-  object-fit: cover;
-}
-.scanner__frame {
-  position: absolute;
-  inset: 50% auto auto 50%;
-  inline-size: min(80vw, 26rem);
-  aspect-ratio: 2 / 1;
-  transform: translate(-50%, -50%);
-  border: 3px solid #fff;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.45);
-}
-.scanner__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
-  background: #000;
-}
-.scanner__prompt {
-  font-size: var(--step-1);
-  font-weight: 700;
-}
-.scanner--failed {
-  inline-size: min(28rem, calc(100vw - 2 * var(--space-4)));
-  block-size: fit-content;
-  margin: auto;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  color: var(--text);
-}
-.scanner--failed::backdrop {
-  background: rgb(14 16 18 / 0.55);
-}
-.scanner__failed {
-  display: grid;
-  gap: var(--space-4);
-  justify-items: start;
-  padding: var(--space-5);
-}
-.scanner__failed-icon {
-  inline-size: 2rem;
-  block-size: 2rem;
-  color: var(--danger);
-}
-@media (forced-colors: active) {
-  .scanner__frame {
-    border-color: CanvasText;
-  }
+.money {
+  font-variant-numeric: tabular-nums;
 }

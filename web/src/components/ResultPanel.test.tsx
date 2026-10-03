@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_META } from '../lib/api';
-import { SANDBOX_NO_MARKET } from '../lib/verdict-copy';
+import { NO_MARKET_REASON, SANDBOX_NO_MARKET } from '../lib/verdict-copy';
 import type { LookupState } from '../lib/types';
 import { entryFor, flip, noMarket, rip, risky, uncertain } from '../test/fixtures';
-import { ResultPanel } from './ResultPanel';
+import { EmptyState, ResultPanel } from './ResultPanel';
 
 function renderPanel(shown: LookupState, extra: Partial<Parameters<typeof ResultPanel>[0]> = {}) {
   const props = {
@@ -33,10 +33,89 @@ describe('ResultPanel', () => {
     expect(document.title).toBe('Flip it or Rip it');
   });
 
-  it('S1 loading: busy skeleton', () => {
+  it('EmptyState: the extracted markup used by the resting sheet', () => {
+    render(<EmptyState />);
+    const h = screen.getByRole('heading', { level: 2, name: 'Scan or type an item' });
+    expect(h.id).toBe('result-heading');
+    expect(h.getAttribute('tabindex')).toBe('-1');
+    expect(screen.getByText("You'll get a verdict — flip it or rip it — with the numbers behind it.")).toBeTruthy();
+    expect(document.activeElement).not.toBe(h);
+  });
+
+  it('S1 loading: busy skeleton, no result-heading', () => {
     const { container } = renderPanel({ status: 'loading', input: { title: 'x' } });
-    expect(container.querySelector('section')!.getAttribute('aria-busy')).toBe('true');
+    const section = container.querySelector('section')!;
+    expect(section.getAttribute('aria-busy')).toBe('true');
+    expect(section.getAttribute('aria-label')).toBe('Result');
     expect(container.querySelector('.skeleton')).toBeTruthy();
+    expect(container.querySelector('#result-heading')).toBeNull();
+  });
+
+  it('S1 loading, narrow width (focusLoading): the busy section takes focus', async () => {
+    const { container } = renderPanel({ status: 'loading', input: { title: 'x' } }, { focusLoading: true });
+    const section = container.querySelector('section')!;
+    expect(section.getAttribute('tabindex')).toBe('-1');
+    await waitFor(() => expect(document.activeElement).toBe(section));
+  });
+
+  it('S1 loading, desktop (focusLoading default false): the submitter keeps focus', async () => {
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    renderPanel({ status: 'loading', input: { title: 'x' } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(input);
+    input.remove();
+  });
+
+  it('S1 loading with focusLoading but not visible (R13): no focus theft', async () => {
+    const { container } = renderPanel(
+      { status: 'loading', input: { title: 'x' } },
+      { focusLoading: true, visible: false },
+    );
+    const section = container.querySelector('section')!;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).not.toBe(section);
+  });
+
+  it('S1 → result, narrow width: focus moves from the busy section on to #result-heading', async () => {
+    const { rerender, container, props } = renderPanel(
+      { status: 'loading', input: { title: 'x' } },
+      { focusLoading: true },
+    );
+    const section = container.querySelector('section')!;
+    await waitFor(() => expect(document.activeElement).toBe(section));
+    rerender(<ResultPanel {...props} shown={success(flip)} focusLoading />);
+    await waitFor(() => expect(document.activeElement?.id).toBe('result-heading'));
+  });
+
+  describe('S8–S11 error panels', () => {
+    it('S8 limit: heading, body and the #recent anchor (no onOpenRecent)', () => {
+      renderPanel({ status: 'error', error: { kind: 'limit' }, input: {} });
+      expect(screen.getByRole('heading', { name: "You've hit today's limit" })).toBeTruthy();
+      const link = screen.getByRole('link', { name: 'Your recent lookups are still here.' });
+      expect(link.getAttribute('href')).toBe('#recent');
+    });
+
+    it('S8 limit with onOpenRecent: a button, not a link', () => {
+      const onOpenRecent = vi.fn();
+      renderPanel({ status: 'error', error: { kind: 'limit' }, input: {} }, { onOpenRecent });
+      const button = screen.getByRole('button', { name: 'Your recent lookups are still here.' });
+      fireEvent.click(button);
+      expect(onOpenRecent).toHaveBeenCalled();
+      expect(screen.queryByRole('link', { name: 'Your recent lookups are still here.' })).toBeNull();
+    });
+
+    it.each([
+      ['unavailable', "eBay isn't answering"],
+      ['offline', "You're offline"],
+      ['unexpected', 'Something went wrong'],
+    ] as const)('S9/S10/S11 %s: heading, copy and Try again', (kind, heading) => {
+      const { props } = renderPanel({ status: 'error', error: { kind }, input: {} });
+      expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      expect(props.onRetry).toHaveBeenCalled();
+    });
   });
 
   it.each([
@@ -60,10 +139,65 @@ describe('ResultPanel', () => {
     expect(props.onCheckAnother).toHaveBeenCalled();
   });
 
+  it("R-D ground='static': exactly one action button, 'Check another'", () => {
+    const { container } = renderPanel(success(flip), { ground: 'static' });
+    const buttons = container.querySelectorAll('.actions button');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]!.textContent).toBe('Check another');
+  });
+
+  it("R-D ground='camera': primary 'Scan the next one' plus a .btn-text 'Check another'", () => {
+    const onScanNext = vi.fn();
+    const { props } = renderPanel(success(flip), { ground: 'camera', onScanNext });
+    const primary = screen.getByRole('button', { name: 'Scan the next one' });
+    expect(primary.classList.contains('btn--primary')).toBe(true);
+    fireEvent.click(primary);
+    expect(onScanNext).toHaveBeenCalled();
+    const secondary = screen.getByRole('button', { name: 'Check another' });
+    expect(secondary.classList.contains('btn-text')).toBe(true);
+    fireEvent.click(secondary);
+    expect(props.onCheckAnother).toHaveBeenCalled();
+  });
+
+  it('visible=false: heading renders but focus is not stolen', async () => {
+    renderPanel(success(flip), { visible: false });
+    const h = screen.getByRole('heading', { name: 'Flip it' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).not.toBe(h);
+  });
+
+  it('visible flipping false → true for the same shown object focuses once, not twice', async () => {
+    const s = success(flip);
+    const { rerender, props } = renderPanel(s, { visible: false });
+    const h = screen.getByRole('heading', { name: 'Flip it' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).not.toBe(h);
+    rerender(<ResultPanel {...props} shown={s} visible />);
+    await waitFor(() => expect(document.activeElement).toBe(h));
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    rerender(<ResultPanel {...props} shown={s} visible />);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(input);
+    input.remove();
+  });
+
+  it('R-C: .result__body children appear in the fixed DOM order', () => {
+    const { container } = renderPanel(success(flip));
+    const body = container.querySelector('.result__body')!;
+    const firstClass = (el: Element) => el.className.split(' ')[0];
+    const classes = Array.from(body.children).map(firstClass);
+    expect(classes).toEqual(['capsule', 'verdict__reason', 'verdict__eyebrow', 'match', 'breakdown', 'basis-note', 'actions']);
+  });
+
   it('S5 UNCERTAIN: suggestions, closed rough figures, no donate/recycle words', () => {
     const onScan = vi.fn();
     const { container } = renderPanel(success(uncertain), { onScan });
     expect(screen.getByRole('heading', { name: "Can't tell" })).toBeTruthy();
+    expect(container.querySelector('.capsule--unc')).toBeTruthy();
+    expect(container.querySelector('.net')).toBeNull();
+    expect(container.textContent).not.toContain('in your pocket');
     fireEvent.click(screen.getByRole('button', { name: 'Scan the barcode if it has one' }));
     expect(onScan).toHaveBeenCalled();
     expect(screen.getByText('Add details: platform, edition, or year')).toBeTruthy();
@@ -84,8 +218,10 @@ describe('ResultPanel', () => {
   it('S6 no market data: overridden reason, no figures, try-the-name for barcodes', () => {
     const { container, props } = renderPanel(success(noMarket));
     expect(screen.getByRole('heading', { name: 'Rip it' })).toBeTruthy();
-    expect(screen.getByText("No one is selling this on eBay right now, so there's no price to go on.")).toBeTruthy();
+    expect(screen.getByText(NO_MARKET_REASON)).toBeTruthy();
     expect(container.querySelector('dl')).toBeNull();
+    expect(container.querySelector('.net')).toBeNull();
+    expect(container.querySelector('.figures__row')).toBeNull();
     expect(container.textContent).not.toContain('$0.00');
     fireEvent.click(screen.getByRole('button', { name: 'Try the item name instead' }));
     expect(props.onTryTitle).toHaveBeenCalled();
@@ -98,6 +234,13 @@ describe('ResultPanel', () => {
       fromHistory: false,
     });
     expect(screen.queryByRole('button', { name: 'Try the item name instead' })).toBeNull();
+  });
+
+  it('loss case: minus-signed figure and the loss caption (US4-4)', () => {
+    const { container } = renderPanel(success({ ...flip, profitCents: -320 }));
+    expect(container.querySelector('.net--loss')).toBeTruthy();
+    expect(screen.getByText('−$3.20')).toBeTruthy();
+    expect(screen.getByText('out of pocket — a loss')).toBeTruthy();
   });
 
   it('S12 from history: saved note and focus on the verdict heading', async () => {

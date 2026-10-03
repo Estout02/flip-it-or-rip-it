@@ -1,55 +1,45 @@
 /*
- * Design tokens — specs/006-web-client/data-model.md "Design tokens", verbatim.
- *
- * WCAG 2.x contrast ratios, verified with the relative-luminance formula (light / dark).
- * Minimums: 4.5:1 text, 3:1 UI components and focus indicators.
- *
- *   --text on --bg                 16.41 / 16.26     --text on --surface         17.61 / 14.91
- *   --text-muted on --bg            6.39 /  8.42     --text-muted on --surface    6.86 /  7.72
- *   --border-ui on --bg (UI)        3.57 /  4.09     --border-ui on --surface     3.83 /  3.75
- *   --focus on --bg (UI)            6.24 /  9.13     --focus on --surface         6.70 /  8.36
- *   --danger on --bg                6.13 /  8.32     --danger on --surface        6.57 /  7.63
- *   --btn-fg on --btn-bg           17.61 / 16.26
- *   --flip-fg on --flip-tint        5.82 /  8.48     --text on --flip-tint       15.33 / 13.11
- *   --risky-fg on --risky-tint      6.21 /  8.88     --text on --risky-tint      15.54 / 13.40
- *   --rip-fg on --rip-tint          6.95 /  8.02     --text on --rip-tint        14.83 / 14.04
- *   --unc-fg on --unc-tint          7.34 /  9.12     --text on --unc-tint        15.15 / 12.83
- *
- * Additional pairs used by components (same script):
- *   --text-muted on each tint      ≥ 5.77 / ≥ 6.64   (history note inside the verdict band)
- *   --focus on each tint           ≥ 5.64 / ≥ 7.20   (focus ring inside the verdict band)
- *   verdict --*-fg on --surface    ≥ 6.69 / ≥ 8.51   (verdict icon/label outside the band)
- *   --test-fg on --test-tint       8.73 /  8.81     --test-fg on --bg            9.65 / 10.68   (spec 007 badge)
- *   --text on --test-tint         14.84 / 13.42
- *   --test-border on --bg (UI)     5.50 /  6.15     --test-border on --test-tint 4.98 /  5.07
- *
- * --border-subtle is decorative only and never carries meaning.
+ * Design tokens (008 native-sheet-ui rewrite) — specs/008-native-sheet-ui/data-model.md "Design
+ * tokens", verbatim. Every ratio below is normative in specs/008-native-sheet-ui/contracts/
+ * color-contract.md and asserted on every run by web/src/styles/contrast.test.ts (FR-013, SC-002):
+ * a token edit here that drifts from the contract fails that test, not a review.
  */
 :root {
   color-scheme: light dark;
 
-  --bg: #f7f7f4;
-  --surface: #ffffff;
-  --text: #17191c;
-  --text-muted: #555b63;
-  --border-ui: #7c838c;
-  --border-subtle: #e3e5e1;
+  /* Grounds and surfaces */
+  --sheet-glass: rgba(250, 250, 251, 0.95);
+  --sheet-blur: blur(26px) saturate(1.5);
+  --sheet-opaque: #f4f4f7;
+  --ground-static: #e7e7ec;
+  --viewfinder-bg: #000000;
+  --chrome-bg: #1c1c1e;
+  --chrome-fg: #f5f5f7;
+  --chrome-secondary: #a0a6b0;
+  --chrome-focus: #8ab4ff;
+
+  /* Ink, lines, state */
+  --ink: #0a0a0b;
+  --secondary: #636872;
+  --hairline: rgba(10, 10, 11, 0.12);
+  --control-border: #6b717a;
   --focus: #1d4ed8;
   --danger: #b42318;
-  --btn-bg: #17191c;
-  --btn-fg: #ffffff;
 
-  --flip-fg: #0a6a3b;
-  --flip-tint: #e3f3ea;
-  --risky-fg: #8a4700;
-  --risky-tint: #fdefd9;
-  --rip-fg: #5335b5;
-  --rip-tint: #eee9fb;
-  --unc-fg: #474d55;
-  --unc-tint: #eceef1;
-  --test-fg: #1e3a8a;
-  --test-tint: #e4ecfb;
-  --test-border: #3b5bcc;
+  /* Verdict quartets */
+  --tint-flip: #0e8f6e;
+  --tint-risky: #b07000;
+  --tint-rip: #5f6672;
+  --tint-unc: #4a4fbf;
+  --fill-flip: #0c7f62;
+  --fill-risky: #965f00;
+  --fill-rip: #5f6672;
+  --fill-unc: #4a4fbf;
+  --fill-label: #ffffff;
+  --caps-flip: #d4e6e4;
+  --caps-risky: #eae2d4;
+  --caps-rip: #dfe0e4;
+  --caps-unc: #dcddef;
 
   --shadow: 0 1px 2px rgb(23 25 28 / 0.06), 0 4px 16px rgb(23 25 28 / 0.06);
 
@@ -63,11 +53,19 @@
   --space-7: 2.5rem; /* 40px */
   --space-8: 3rem; /* 48px */
 
-  --radius-sm: 8px;
-  --radius-lg: 16px;
+  /* Shape */
+  --radius-sheet: 22px;
+  --radius-card: 16px;
+  --radius-pill: 999px;
+  --radius-sm: 10px;
   --target: 44px;
+  --sheet-shadow: 0 -1px 0 var(--hairline), 0 -12px 32px rgb(0 0 0 / 0.18);
 
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+  --text-name: 1.3125rem;
+  --text-net: 2.375rem;
+  --kb-inset: 0px;
+
   --step--1: clamp(0.875rem, 0.85rem + 0.1vw, 0.9375rem);
   --step-0: clamp(1rem, 0.96rem + 0.2vw, 1.125rem);
   --step-1: clamp(1.125rem, 1.07rem + 0.3vw, 1.3125rem);
@@ -78,28 +76,30 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e1012;
-    --surface: #171a1d;
-    --text: #ecedee;
-    --text-muted: #a7adb4;
-    --border-ui: #6e757d;
-    --border-subtle: #2a2e33;
+    --sheet-glass: rgba(28, 28, 30, 0.95);
+    --sheet-opaque: #17171a;
+    --ground-static: #101012;
+
+    --ink: #f5f5f7;
+    --secondary: #a0a6b0;
+    --hairline: rgba(245, 245, 247, 0.14);
+    --control-border: #8a9099;
     --focus: #8ab4ff;
     --danger: #ff8a7a;
-    --btn-bg: #ecedee;
-    --btn-fg: #0e1012;
 
-    --flip-fg: #5fd69c;
-    --flip-tint: #0e2a1c;
-    --risky-fg: #f4b860;
-    --risky-tint: #2d2110;
-    --rip-fg: #bba9ff;
-    --rip-tint: #211a3b;
-    --unc-fg: #c5cad0;
-    --unc-tint: #23272b;
-    --test-fg: #a9c1ff;
-    --test-tint: #18223d;
-    --test-border: #6f8fe8;
+    --tint-flip: #38d39b;
+    --tint-risky: #f0b357;
+    --tint-rip: #a9b0bd;
+    --tint-unc: #9ea4f5;
+    --fill-flip: #08503c;
+    --fill-risky: #5e3c00;
+    --fill-rip: #383d45;
+    --fill-unc: #343a96;
+    --fill-label: #f5f5f7;
+    --caps-flip: #1d3931;
+    --caps-risky: #3e3325;
+    --caps-rip: #313337;
+    --caps-unc: #2f3041;
 
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
   }
@@ -107,13 +107,16 @@
 
 /* Forced colors: the text label and icon carry meaning; borders make bands and buttons visible. */
 @media (forced-colors: active) {
-  .verdict,
+  .capsule,
   .chip,
   .btn,
-  .card {
+  .sheet,
+  .figures__row,
+  .pill,
+  .chrome__btn {
     border: 2px solid CanvasText;
   }
-  .verdict--unc {
+  .capsule--unc {
     border-style: dashed;
   }
   .icon {
@@ -135,5 +138,54 @@
     background-color: ButtonFace;
     color: ButtonText;
     border-color: ButtonText;
+  }
+  /* `.btn:hover`/`.btn--primary:hover` in app.css paint an authored `--ink`/`--ground-static`
+     background at the same (0,2,0) specificity as the pair above and app.css loads after
+     tokens.css, so on a tie it wins the cascade — hovering Check, Save, Try again or the
+     confirm's Clear all re-painted an authored dark fill behind ButtonText, and on some forced
+     palettes that fill lands close enough to ButtonText to erase the label. Each selector here
+     reaches (0,3,0) by repeating `:root`, so it beats app.css's hover rules regardless of load
+     order and keeps the system button face on hover too. */
+  :root .btn:hover,
+  :root .btn--primary:hover {
+    background-color: ButtonFace;
+    box-shadow: none;
+  }
+  /* The four verdict-tinted primaries (app.css `.capsule--x ~ .actions .btn--primary`, specificity
+     (0,3,0)) win the ordinary cascade over `:root .btn--primary` above (0,2,0), so in forced colors
+     they kept their own authored fill/border/label instead of the neutral system pair — founder's
+     call: respect the user's chosen palette here, the same as every other control; FLIP/RISKY/RIP
+     still read from the label and icon alone, not from this button's colour. Each `:root` prefix
+     below reaches (0,4,0), which wins. Same system keywords as the neutral pair, so axe reads them
+     through `-webkit-text-fill-color` too (only a system keyword, not a forced custom property,
+     satisfies that check — see the chrome-bar fix above). */
+  :root .capsule--flip ~ .actions .btn--primary,
+  :root .capsule--risky ~ .actions .btn--primary,
+  :root .capsule--rip ~ .actions .btn--primary,
+  :root .capsule--unc ~ .actions .btn--primary {
+    forced-color-adjust: none;
+    background-color: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+  }
+  /* The chrome bar's own background/text are left to auto-forcing, same as the pill and the
+     test-data chip below: `forced-color-adjust: none` is inherited, and pinning it on `.chrome`
+     previously opted its whole subtree out of forcing, so `.wordmark`'s own authored `--chrome-fg`
+     colour survived unforced against a system background (1.09:1 — color-contract.md rule 5). Only
+     `.chrome__btn` restates both of its own colours and keeps opting out; `.wordmark` and
+     `.env-badge` take literal system keywords instead (app.css), which is also what makes axe's
+     `-webkit-text-fill-color` read the right value (it never forces that property, only `color`). */
+  :root .chrome__btn {
+    forced-color-adjust: none;
+    background-color: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+  }
+  /* The scanning-status pill (viewfinder, not the chrome bar) is already correctly auto-forced —
+     axe's `-webkit-text-fill-color` quirk is the only reason it needs a literal keyword too.
+     (:root raises specificity over sheet.css, which declares `.pill` plainly and loads later.) */
+  :root .pill {
+    background-color: Canvas;
+    color: CanvasText;
   }
 }
