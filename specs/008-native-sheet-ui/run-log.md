@@ -37,3 +37,24 @@ Orchestrated by `/speckit-orchestrate`. Append-only; one line per phase or packa
 | 2026-09-28 08:02 | fix | scanner loop SC-003 | done | sk-implementer a58e091 | 289/289; new test verified to fail without fix |
 | 2026-09-28 08:14 | fix | Recent close focus to opener | done | sk-implementer a58e091 | 290/290; test verified to fail without fix |
 | 2026-09-28 08:17 | fix | sandbox saved-note (axe flex artifact) | done | sk-implementer a83fd4e | no real overlap measured; sandbox-only order change |
+| 2026-10-02 16:37 | verify | full suite (resume) | started | sk-test-runner aa9de3b | api + web + e2e matrix |
+| 2026-10-02 16:40 | verify | full suite (resume) | failed | sk-test-runner aa9de3b | api 295/296 (1 timing flake, out of scope); web 290/290, 22.8 KB; e2e 453/6/48; SC-007 25.5 ms |
+| 2026-10-02 16:40 | fix | scanner loop e2e (FR-011) | started | sk-implementer ab3903b | core.spec.ts:281 ×4, suspect f660001 |
+| 2026-10-02 16:40 | fix | S13 #clear-title contrast incomplete | started | sk-implementer a346642 | a11y.spec.ts:395 ×2 @ mobile-390 |
+| 2026-10-02 16:51 | fix | scanner loop e2e (FR-011) | done | sk-implementer ab3903b | autoFocus stole focus from camera on scanNext; web 291/291; core.spec 111/0; commit c3bbb5d |
+| 2026-10-02 16:53 | fix | S13 #clear-title contrast incomplete | done | sk-implementer a346642 | nested modal dialogs; portal via preact/compat; S13 6/6; gzip 25.1 KB; commit 8ab073d |
+| 2026-10-02 16:56 | verify | full suite | done | sk-test-runner ab212be | api 296/296; web 291/291, 25.1 KB; e2e 459/0/48; SC-007 25.2 ms |
+| 2026-10-02 16:56 | implement | WP10 | done | orchestrator | closed by green matrix above |
+| 2026-10-02 16:56 | converge | spec vs code | started | sk-converger | |
+| 2026-10-02 16:58 | converge | spec vs code | done | sk-converger a9be923 | converged, no new tasks; CLAUDE.md numbers stale (→ sync) |
+| 2026-10-02 16:58 | review | pass 1 | started | sk-reviewer | |
+| 2026-10-02 17:02 | review | pass 1 | done | sk-reviewer a0714c0 | changes-requested: 3 BLOCKING (Check another on camera; Cancel focus to body; forced-colors primary hover tie), 4 NON-BLOCKING |
+| 2026-10-02 17:02 | fix | review B1+B2 focus paths | started | sk-implementer ab3903b | app.tsx, LookupForm, core.spec.ts:264 |
+| 2026-10-02 17:02 | fix | review B3 hover tie + drop portal | started | sk-implementer a346642 | tokens.css/app.css, RecentList sibling (no compat) |
+| 2026-10-02 17:14 | fix | review B1+B2 focus paths | done | sk-implementer ab3903b | web 295/295, 22.9 KB; core 111/0; a11y 238/0; commit 20d0d2c |
+| 2026-10-02 19:56 | fix | review B3 hover tie + drop portal | done | sk-implementer a346642 | report not received; diff inspected by orchestrator; verified by full run below; commit 2c2a9d2 |
+| 2026-10-02 20:02 | verify | full suite | done | sk-test-runner abe5000 | api 296/296; web 295/295, 22.9 KB, no compat; e2e 459/0/48; SC-007 21.2 ms |
+| 2026-10-02 20:02 | review | pass 2 | started | sk-reviewer a0714c0 | |
+| 2026-10-02 20:03 | review | pass 2 | done | sk-reviewer a0714c0 | approve; 0 BLOCKING; 5 NON-BLOCKING carried to PR |
+| 2026-10-02 20:03 | sync | CLAUDE.md + tasks [X] | started | sk-chore | |
+| 2026-10-02 20:03 | sync | CLAUDE.md + tasks [X] | done | sk-chore a7c26fe | 22.9 KB / 295 tests; all tasks [X] |

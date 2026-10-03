@@ -101,7 +101,7 @@ runs a second axe pass with `<video>` hidden and fails on `color-contrast` entri
 `incomplete`; two lookbook tints were adjusted to pass AA (secondary `#6B7079` → `#636872`,
 FLIP_RISKY `#C07A00` → `#B07000`). Semantic HTML, managed focus, live-region announcements, and axe
 checks run on every screen state in both unit and e2e. Gzip budget holds at **≤ 100 KB** (currently
-22.7 KB, 276 unit tests); latency baseline (submit → verdict median of 5 cycles) is 33.9 ms,
+22.9 KB, 295 unit tests); latency baseline (submit → verdict median of 5 cycles) is 33.9 ms,
 recorded in `web/e2e/baseline.json`. All UI copy comes verbatim from
 `specs/006-web-client/contracts/ui-states.md`. Whenever `/api/meta` reports an `ebayEnv` other than
 `production`, the client shows a "Test data — eBay sandbox" badge in the header, adds a
