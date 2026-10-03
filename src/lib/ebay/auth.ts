@@ -1,7 +1,7 @@
 // OAuth2 client-credentials token manager. Tokens are cached in memory and
 // refreshed proactively so user requests (almost) never pay mint latency.
 
-import { EbayUnavailableError, type EbayEnv } from './types.js';
+import { EbayUnavailableError, isTimeoutError, type EbayEnv } from './types.js';
 
 export const EBAY_API_BASE: Record<EbayEnv, string> = {
   sandbox: 'https://api.sandbox.ebay.com',
@@ -17,15 +17,23 @@ export interface TokenManagerOptions {
   fetchFn?: typeof fetch;
   /** Refresh when less than this much of the token's lifetime remains. */
   refreshMarginMs?: number;
+  /**
+   * Hang guard for the mint call, not a latency budget (same rationale as
+   * BrowseApiClient's timeoutMs — founder direction: speed is a goal, never
+   * a cutoff).
+   */
+  timeoutMs?: number;
 }
 
 const DEFAULT_REFRESH_MARGIN_MS = 5 * 60_000;
+const DEFAULT_TIMEOUT_MS = 15000;
 
 export class EbayTokenManager {
   private readonly tokenUrl: string;
   private readonly basicAuth: string;
   private readonly fetchFn: typeof fetch;
   private readonly refreshMarginMs: number;
+  private readonly timeoutMs: number;
   private token: { value: string; expiresAt: number } | null = null;
   private minting: Promise<string> | null = null;
 
@@ -36,6 +44,7 @@ export class EbayTokenManager {
     ).toString('base64');
     this.fetchFn = options.fetchFn ?? fetch;
     this.refreshMarginMs = options.refreshMarginMs ?? DEFAULT_REFRESH_MARGIN_MS;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   async getToken(): Promise<string> {
@@ -67,9 +76,15 @@ export class EbayTokenManager {
           grant_type: 'client_credentials',
           scope: OAUTH_SCOPE,
         }).toString(),
-        signal: AbortSignal.timeout(2000),
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {
+      if (isTimeoutError(err)) {
+        throw new EbayUnavailableError(
+          `eBay token mint timed out after ${this.timeoutMs}ms`,
+          { cooldown: false },
+        );
+      }
       throw new EbayUnavailableError(
         `eBay token endpoint unreachable: ${err instanceof Error ? err.message : String(err)}`,
       );

@@ -76,7 +76,7 @@ verdict step. Zero competing listings reads as UNPROVEN and never gates in eithe
 the only code that touches the real sandbox is the opt-in smoke script:
 `docker compose run --rm api npx tsx scripts/sandbox-smoke.ts`. New env vars (see `.env.example`):
 `EBAY_MARKETPLACE_ID`, `EBAY_FEE_RATE`, `SHIPPING_FLAT_CENTS`, `VALUATION_CACHE_TTL_HOURS`,
-`LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`, `TRUST_PROXY`, plus the liquidity knobs
+`LOOKUP_DAILY_CAP`, `EBAY_DAILY_CALL_BUDGET`, `EBAY_TIMEOUT_MS`, `TRUST_PROXY`, plus the liquidity knobs
 `LIQUIDITY_STRONG_MAX_LISTINGS`, `LIQUIDITY_MODERATE_MAX_LISTINGS`,
 `LIQUIDITY_RISKY_MARGIN_MULTIPLIER`, `VALUATION_REALIZATION_RATE`, and the match thresholds
 `MATCH_MIN_DOMINANCE_HIGH`, `MATCH_MIN_DOMINANCE_MEDIUM`, `MATCH_MAX_DISPERSION_HIGH`,
