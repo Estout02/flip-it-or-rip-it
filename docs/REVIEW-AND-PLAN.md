@@ -9,6 +9,9 @@ anything not verified is marked **(unverified)**.*
 
 ## 0. The short version
 
+*Updated 2026-11-02 after Eric's decisions: resellers first as the paying customers, declutterers
+as the free funnel, and new test tiers. Sections 0, 2.1, 2.3, 4.6, 5 and 6 changed.*
+
 - **The engineering is good, maybe too good for where the product is.** Seven specs, ~400 tests,
   a careful constitution, an accessible PWA with a barcode scanner. The backend is honest about
   what it doesn't know. The problem isn't the code.
@@ -18,25 +21,26 @@ anything not verified is marked **(unverified)**.*
   that derives "conversion, completion or success rates" (i.e. sell-through). The valuation and the
   liquidity score are both squarely in that territory. Scraping was never the only risk.
 - **The market is not empty.** Underpriced (launched Nov 2025) is almost this exact product:
-  photo/barcode → sold comps → fees and shipping out → "Flip or Pass" verdict, $9.99–$24.99/mo,
-  iPhone + Android + web. eBay's own app now does AI photo listing with pricing guidance. ScoutIQ
-  owns Amazon book scouting.
-- **The real wedge is the one already in the brief and not yet built: the household declutter, not
-  the reseller sourcing run.** Every competitor answers "should I *buy* this to resell?" Nobody is
-  built for "I have 200 things in my garage — which 15 are worth my weekend, and where do the other
-  185 go?" That's the anti-consumerism angle, and it changes what data you need (bands, not
-  pennies), who pays (households, occasionally), and how you can be compliant.
+  photo/barcode, sold comps, fees and shipping out, a "Flip or Pass" verdict, $9.99 to $24.99 a
+  month on iPhone, Android and web. eBay's own app now does AI photo listing with pricing guidance.
+  ScoutIQ owns Amazon book scouting.
+- **Who it's for:** resellers pay, declutterers come in free. The goal is to help people declutter
+  and make money. A lot of people who start by clearing out a garage find out they like selling,
+  and they turn into part-time resellers. The free tier is how they find us. The paid tiers are for
+  when they start doing it on purpose.
+- **How we're different from Underpriced:** a lower price, and we follow the money all the way to
+  tax time. Every sale goes into a sales log with fees and shipping, and every rip-it item can be
+  logged as a donation with a receipt. Underpriced stops at "flip or pass." We keep going.
 - **Recommended data path:** ask eBay for written consent now, and in parallel make the verdict
-  *source-agnostic* — "worth listing / not worth your time / donate" bands driven by a pluggable
-  price source (licensed category sources first, the user's *own* eBay sales for themselves,
-  eBay Browse only once consent is in hand). Details in §3.
+  *source-agnostic*: value bands driven by a pluggable price source (licensed category sources
+  first, the user's *own* eBay sales for themselves, eBay Browse only once consent is in hand).
+  Details in section 3.
 - **Recommended app stack:** Expo (React Native + TypeScript), with the existing Fastify API as the
-  backend. Capacitor around the existing PWA is the fallback if speed-to-TestFlight beats
-  everything else. Details in §4.
-- **Verdict on potential:** modest as a reseller tool (crowded, and the data is locked up);
-  genuinely interesting as a declutter/donate app *if* the value bands can be sourced compliantly.
-  It's worth a cheap, time-boxed validation (§5, Phase 0–1, ~6 weeks, <$200) before building the
-  native app.
+  backend. Capacitor around the existing PWA is the fallback if speed to TestFlight beats
+  everything else. Details in section 4.
+- **Verdict on potential:** real, if two things hold up. Resellers have to pay for it, and the price
+  data has to be something we're allowed to use. Both are cheap to test. That's what the beta is for
+  (section 5, Phase 0 and 1, about 6 weeks, under $200), before building the native app.
 
 ---
 
@@ -116,20 +120,22 @@ anything not verified is marked **(unverified)**.*
 
 ## 2. Product review
 
-### 2.1 Who it's for — two different users
+### 2.1 Who it's for: resellers pay, declutterers are the funnel
 
-| | **Reseller (sourcing)** | **Household (declutter)** |
+| | **Reseller (paying customer)** | **Declutterer (free funnel)** |
 |---|---|---|
-| Question | "Should I *buy* this to resell?" | "Is this worth selling, or should it go?" |
-| Volume | Hundreds of scans a week | A burst of 50–300 once or twice a year |
-| Needs | Exact comps, sell-through, speed, offline | A confident yes/no, a rough band, where to donate, a sense of progress |
-| Willing to pay | Yes, monthly ($10–$44/mo is normal) | Rarely monthly; maybe once, or per "project" |
-| Already served by | ScoutIQ, Underpriced, eBay Product Research, WorthPoint | **Nobody well** |
+| Question | "Is this worth buying to flip, and what do I actually keep?" | "Is this worth selling, or should it go?" |
+| Volume | Hundreds of scans a week | A burst of 50 to 300 once or twice a year |
+| Needs | Speed, profit after fees and shipping, photo lookups, a record of every sale for taxes | A confident yes or no, a rough band, where to donate |
+| Willing to pay | Yes, monthly ($10 to $44 a month is normal in this space) | Rarely, and that's fine |
+| Already served by | ScoutIQ, Underpriced, eBay Product Research, WorthPoint | Nobody well |
 
-The brief targets both, but the anti-consumerism angle, the "remove X pounds from your house"
-stats, and the RIP-means-donate verdict all point at the household. Eric is a reseller himself,
-which is why the reseller framing crept in.
+Why both? Because they're often the same person a few months apart. You clear out the garage, you
+sell a few things, you make $400, and then you're at a thrift store on a Saturday looking at books.
+The free tier catches people at the start of that. The paid tiers are built for where they end up.
 
+I'm a reseller myself, so I know the paid side is where the money is. The declutter side is where
+the story is, and it's how people find the app.
 ### 2.2 Competitors (checked 2026-11-02)
 
 | Product | What it does | Price | Notes |
@@ -151,24 +157,28 @@ because eBay doesn't want them
 
 ### 2.3 The real wedge
 
-Not "faster comps" — eBay and Underpriced will always be closer to the data. The wedge is
-**decluttering triage with a conscience**:
+Faster comps isn't it. eBay and Underpriced will always be closer to the data. The wedge is
+**following the money from the scan to tax time, for less.**
 
-1. **Triage, not appraisal.** The household doesn't need $14.37; it needs *"List it (likely
-   $30–60)"*, *"Bundle it"*, *"Not worth your time — donate"*. A banded verdict is more useful for
-   this user, more honest given the data, and (see §3) easier to make compliant.
-2. **RIP is a first-class outcome.** Today RIP is a dead end. Make it the best part: where to
-   donate nearby, a running donation log with estimated fair-market value for the tax receipt
-   (sourced from published thrift valuation guides, *not* eBay), and the "you cleared 140 lb from
-   your house" stat. No competitor treats "get rid of it" as success.
-3. **Session mode.** "Garage session: 87 scanned, 9 to list, 3 to bundle, 75 to donate, est.
-   $410." That's a shareable artefact and a natural paid unit (§4.6).
-4. **FLIP hands off to eBay's own listing tools.** Instead of competing with Magical Listing,
-   deep-link or draft into it. That *promotes eBay services*, which is the license's stated
-   purpose — and the strongest argument in a consent request (§3).
+1. **Lower price.** Underpriced charges $9.99 for 75 analyses a month and $24.99 for 500
+   ([pricing](https://www.underpriced.app/pricing)). Side Hustle at about $7.99 gives unlimited
+   barcode scans. Pro at about $19.99 undercuts their top tier.
+2. **The money trail.** Scan, verdict, sale, sales log with real fees and shipping, tax export. Eric
+   already does this by hand once a month for his own eBay sales, and it's the most tedious part of
+   reselling. Underpriced has inventory and a flip tracker, but it doesn't take you through to the
+   tax return.
+3. **Rip-it items count too.** Every "rip it" can be logged as a donation: where it went, the date,
+   an estimated fair-market value from a published thrift valuation guide (not eBay), and a receipt
+   photo. Come April, that's a list your tax preparer can use. *TODO: check with a tax pro how this
+   works for itemizers versus non-itemizers, and for resellers donating inventory, where the deduction
+   is usually limited to cost. The app should say so plainly.*
+4. **Session mode.** "Garage session: 87 scanned, 9 to list, 3 to bundle, 75 to donate, est. $410."
+   That's what a declutterer shares, and it's bulk scanning for a reseller.
+5. **Flip hands off to eBay's listing flow.** We don't compete with Magical Listing. We send people
+   to it. That promotes eBay's services, which is the strongest argument in the consent request
+   (section 3).
 
-For Eric personally, a reseller "sourcing mode" can stay as a power feature, but it shouldn't be the
-headline.
+---
 
 ---
 
@@ -212,7 +222,7 @@ Principle I was written to prevent, arrived at by a different road.
 ### 3.3 Recommendation: "Consent-gated eBay, source-agnostic verdict"
 
 1. **This week:** send the consent request (draft points in Appendix A). Frame the app as a funnel
-   *into* eBay listing (FLIP → eBay listing flow), declutter-focused, low volume, with honest
+   *into* eBay listing (FLIP → eBay listing flow), for decluttering and part-time selling, low volume, with honest
    labelling.
 2. **Refactor on paper first (spec 009):** split "valuation" into a `PriceSource` interface returning
    a *band* plus a confidence and provenance (`DISCOGS`, `PRICECHARTING`, `USER_OWN_HISTORY`,
@@ -225,7 +235,7 @@ Principle I was written to prevent, arrived at by a different road.
 4. **If consent is granted,** `EBAY_BROWSE_WITH_CONSENT` becomes the default source and the rest
    become calibration.
 5. **If consent is refused and books have no compliant source,** that is a kill/pivot signal for the
-   reseller angle (§5.4), and the product leans fully into declutter + donate.
+   reseller angle (§5.4). The fallback is a sales-and-donation tracker without valuations.
 
 This needs a constitution amendment (Principle I currently allows "official eBay APIs only" and
 bans third-party sold-data vendors). Recommend v2.0.0: "compliant data only — official APIs used
@@ -296,22 +306,42 @@ downloadable offline database is out of scope (and would be eBay Content redistr
 - Camera permission strings, privacy nutrition labels, a demo path for reviewers, and a clear
   statement that values are estimates.
 
-### 4.6 Monetisation
+### 4.6 Monetization (test tiers, hypotheses for the beta)
 
-Keep the founder's rule: features that can't run profitably don't ship. Costs per scan are tiny
-(barcode ≈ $0; photo ID < $0.001; hosting ≈ $10–25/mo at beta scale), so pricing is about value,
-not cost recovery.
+These are guesses to test, not decisions. The beta's job is to find out whether resellers pay, and
+which of these features they'd pay for.
 
-| Tier | For | Price (proposal) |
-|---|---|---|
-| Free | Households | Unlimited barcode verdicts with fair-use cap (~50/day), 10 photo IDs/month, donation log |
-| Declutter Pass | A one-off big clear-out | **$4.99 one-time for 30 days** of unlimited photo ID, sessions, export/share |
-| Flipper | Ongoing sellers | **$4.99/mo or $39/yr**: sourcing mode, own-sales calibration (B3), inventory, tax export |
+| Tier | For | Price (hypothesis) | What's in it |
+|---|---|---|---|
+| **Free** | Declutterers | $0 | Limited daily scans (about 10 a day to start), value bands, where to donate |
+| **Side Hustle** | Part-time resellers | ~$7.99/mo | Unlimited barcode scans, photo lookups, profit after fees and shipping, a sales log |
+| **Pro** | Full-time resellers | ~$19.99/mo | High-volume photo lookups, bulk session scanning, sell-through and listing-age signals, tax exports |
 
-Underpriced anchors at $9.99/mo; undercutting with a declutter-first free tier is the point.
-eBay Partner Network affiliate revenue on "view on eBay" taps is a possible small extra *(attribution
-for a valuation tool unverified)*. After the 15% store cut and RevenueCat (free under $2.5k/mo),
-a $39/yr subscriber nets ~$33.
+Two notes on Pro. Listing age can come from the Browse API's `itemOriginDate` field. Sell-through is
+exactly what eBay's license calls a "completion or success rate," so it needs eBay's written consent
+or a non-eBay source before it can ship. If neither comes through, Pro sells on volume, bulk
+sessions and tax exports.
+
+**Unit economics, using the numbers already in this doc:**
+
+| | Free | Side Hustle | Pro |
+|---|---|---|---|
+| Price | $0 | $7.99 | $19.99 |
+| After the 15% store cut | $0 | ~$6.79 | ~$16.99 |
+| Barcode lookup cost | ~$0 (eBay calls are free under quota; cache absorbs repeats) | ~$0 | ~$0 |
+| Photo lookup cost (< $0.0005 each, section 4.2) | n/a | 500/mo ≈ $0.25 | 5,000/mo ≈ $2.50 |
+| Gross margin per user | small loss (hosting share) | ~$6.50 | ~$14.50 |
+
+Per-lookup cost isn't the problem. The fixed costs are. Hosting at $10 to $25 a month is covered by
+four Side Hustle subscribers. Licensed data at $50 to $100 a month, if we need it, takes about 8 to
+15. RevenueCat is free under $2.5k a month in revenue.
+
+The real ceiling is eBay's quota, not money. "Unlimited" barcode scans across many users still run
+into the 5,000 calls a day app limit (2,500 is our own budget). The 24-hour cache by barcode helps a
+lot, since resellers scan the same books and games. Past that we'd apply for eBay's free Application
+Growth Check. Paid tiers should have a quiet fair-use cap until then.
+
+---
 
 ---
 
@@ -325,19 +355,31 @@ a $39/yr subscriber nets ~$33.
 - Write spec 009 "PriceSource and value bands" (docs only) and the constitution v2.0.0 proposal.
 - **Milestone:** consent request sent; repo state matches its docs.
 
-### Phase 1 — Validate with Eric and 20 people (weeks 1–6, < $200)
+### Phase 1: Validate with Eric and 20 people (weeks 1 to 6, < $200)
 
-- **Eric uses the existing PWA at thrift stores and at home** for 4 weeks, logging every verdict and
-  what he actually did/sold for (B5). Personal use, his own judgment — not a public product.
-- **20-person beta**, half resellers, half "normal" households with a garage/closet to clear. Use the
-  PWA (or a Capacitor TestFlight build if the camera UX blocks). Recruit from Eric's network and one
-  local Buy Nothing / decluttering group.
-- Measure: verdicts per session, % of FLIPs actually listed, reported sale price vs. band, % of RIPs
-  that went to donation, and "would you be upset if this went away?"
-- Interview 10 beta users: do they want a price or a decision? Would they pay $4.99 once?
-- **Milestone / go criteria:** ≥60% of household testers complete a session of ≥20 items;
-  ≥40% "very disappointed" if it disappeared (Sean Ellis test); FLIP bands contain the real sale price
-  ≥70% of the time for the items that sold; at least one compliant price source per top-3 category.
+- **I use the existing PWA at thrift stores and at home** for 4 weeks, logging every verdict and
+  what I actually did with it and sold it for (B5). That's personal use and my own judgment, not a
+  public product.
+- **20-person beta: 14 resellers, 6 declutterers.** Resellers are the customers, so most of the
+  beta is them, mostly part-time. The 6 declutterers tell us whether the free funnel works and
+  whether any of them start selling. Recruit resellers from r/Flipping-type communities and local
+  reseller groups, declutterers from my own network and a local Buy Nothing group. Use the PWA, or a
+  Capacitor TestFlight build if the camera gets in the way.
+- **Paid-intent test.** In week 5, offer the resellers a founding-member price on Side Hustle or Pro
+  (for example half off for the first year), paid now and refundable if we don't launch. Saying "I'd
+  pay" is cheap. Paying is the real test.
+- **Measure:** scans per reseller per week, % of flips actually listed, reported sale price vs. the
+  band, how many sales make it into the sales log, % of rip-its logged as donations, and how many
+  declutterers list something.
+- **Interview 10 testers:** which features would you pay for? Is $7.99 or $19.99 a no-brainer, fair,
+  or too much?
+- **Go criteria:**
+  - at least 5 of 14 resellers pay the founding price
+  - resellers average at least 30 scans a week by week 4
+  - the band contains the real sale price at least 70% of the time on items that sold
+  - at least 40% of resellers would be "very disappointed" if it went away (Sean Ellis test)
+  - at least one compliant price source for each of the top three reseller categories
+  - nice to have: at least 1 of 6 declutterers lists something
 
 ### Phase 2 — MVP app (weeks 7–14, ~$150 + Eric's time)
 
@@ -350,22 +392,24 @@ a $39/yr subscriber nets ~$33.
 - **Milestone:** 50 weekly active testers; crash-free sessions ≥99%; p50 scan→verdict < 1.5 s on cached
   items, < 3 s uncached.
 
-### Phase 3 — Launch (weeks 15–20)
+### Phase 3: Launch (weeks 15 to 20)
 
-- App Store + Play listing, privacy policy, support page, onboarding that explains "estimate, not
-  appraisal."
-- Declutter Pass + Flipper subscription via RevenueCat.
-- One launch story for Eric's blog: "I scanned my whole garage. 9% was worth selling."
-- **Milestone:** 1,000 installs in 60 days; ≥3% paid conversion of active users; D30 retention ≥15%
-  for Flippers (households are expected to churn after the clear-out — measure sessions completed,
-  not retention, for them).
+- App Store and Play listing, privacy policy, support page, onboarding that says plainly "estimate,
+  not appraisal."
+- Free, Side Hustle and Pro through RevenueCat, at whatever prices the beta supported.
+- One launch story for my blog: "I scanned my whole garage. 9% was worth selling. Here's what the
+  rest was worth at tax time."
+- **Milestone:** 1,000 installs in 60 days; at least 4% of active users on a paid tier; paid D30
+  retention at least 60%; 100 paying subscribers within 90 days of launch.
 
-### 5.1 Success metrics (north star: items decided per week)
+### 5.1 Success metrics (north star: dollars tracked per paying user per month)
 
-- Items decided (FLIP/RIP acted on) per active user per week.
-- Band accuracy: % of user-reported sales inside the shown band.
-- Donation pounds/items logged (the anti-consumerism metric for the story).
-- Paid conversion and refund rate.
+- **Paid conversion** from free to Side Hustle or Pro, and from founding-member to full price.
+- **Paid retention**, monthly churn under 8%.
+- **Dollars tracked:** sales logged plus donations logged per paying user. If people put their real
+  money in it, they'll keep paying for it.
+- **Band accuracy:** % of logged sales inside the band that was shown.
+- **Funnel:** % of free declutterers who list at least one item, and % who upgrade.
 
 ### 5.2 Costs (first 6 months, rough)
 
@@ -383,42 +427,60 @@ a $39/yr subscriber nets ~$33.
 
 ### 5.3 Top risks
 
-1. **eBay says no (or never answers)** and there's no compliant source for books — the founder's best
-   category. *Mitigation:* declutter positioning needs bands, not comps; Discogs/PriceCharting cover
-   music and games.
+1. **eBay says no (or never answers)** and there's no compliant source for books, my best category.
+   *Mitigation:* bands instead of exact comps; Discogs and PriceCharting cover music and games;
+   licensed Amazon data (Keepa) for books if the numbers work.
 2. **eBay builds it.** Magical Listing already has pricing guidance; a "should I bother?" mode is a
-   small step for them. *Mitigation:* own the RIP/donate side and the session story, which eBay has no
-   incentive to build.
+   small step for them. *Mitigation:* own the money trail (sales log, tax export, donation log), which
+   eBay has no reason to build.
 3. **Underpriced and similar apps are already there** with sold comps and a $9.99 tier.
-   *Mitigation:* don't fight on comps; fight on declutter and on honesty.
-4. **Households don't pay.** *Mitigation:* one-time pass, not a subscription; keep costs near zero.
+   *Mitigation:* don't fight on comps. Fight on price, the tax trail and honesty.
+4. **Resellers won't pay for another tool** when eBay Product Research is free and Underpriced
+   exists. *Mitigation:* the paid-intent test in Phase 1, a lower price, and the tax trail as a reason
+   to stay.
 5. **Solo-dev bandwidth and process weight.** *Mitigation:* Phase 1 is deliberately throwaway; run the
    Spec Kit flow for Phase 2 code only.
 6. **Account/key risk from running the current valuation publicly.** *Mitigation:* nothing public
    until §3 is resolved.
+7. **The donation receipts promise more than taxes allow.** Many people don't itemize, and resellers
+   donating inventory usually deduct cost, not market value. *Mitigation:* say so in the app, and
+   have a tax pro read the copy before launch.
 
 ### 5.4 Kill criteria (decide at the end of Phase 1)
 
-- Fewer than 8 of 20 testers complete a 20-item session → kill or rethink the core loop.
-- Band accuracy < 50% on items that actually sold → the data isn't good enough to ship.
-- eBay refuses consent **and** no compliant source covers at least two of the top three categories
-  testers scan → drop the valuation; consider a pure "declutter + donate tracker" or stop.
-- Nobody of 20 would pay $4.99 once → keep it as Eric's personal tool, don't launch.
+- **Fewer than 3 of 14 resellers pay the founding price.** Then resellers won't pay, and the
+  business doesn't work. Keep it as my own tool.
+- Resellers stop scanning: under 10 scans a week each by week 4 means the core loop isn't useful.
+- Band accuracy under 50% on items that actually sold means the data isn't good enough to ship.
+- eBay refuses consent **and** no compliant source covers at least two of the top three reseller
+  categories. Drop the valuation, and consider a pure sales-and-donation tax tracker or stop.
+- Nobody uses the sales log or donation log during the beta. Then the main thing that sets us apart
+  from Underpriced isn't real, and we should rethink before building the app.
 
 ---
 
-## 6. Decisions for Eric
+## 6. Decisions
 
-1. **Who is it for first:** households decluttering (recommended) or resellers sourcing?
-2. **Send the eBay consent request?** (Draft points below.) And accept that the current valuation
-   stays private/personal until it's resolved?
-3. **Constitution v2.0.0:** allow licensed, non-eBay data providers and user-owned data?
-4. **Paid data:** willing to spend ~$50–100/mo on PriceCharting/Keepa if Phase 1 shows games/books
-   need it?
-5. **Stack:** Expo (recommended) or Capacitor-first for speed?
-6. **Monetisation shape:** one-time Declutter Pass + small subscription, or subscription only?
-7. **Legal read** on user-reported sale prices (B4) and own-account data (B3): worth ~$300–1,000?
-8. **Housekeeping:** merge or close the 008 and timeout branches.
+Decided 2026-11-02:
+
+- **Resellers first** as the paying customers, declutterers as the free funnel.
+- **Test tiers:** Free, Side Hustle (~$7.99/mo), Pro (~$19.99/mo), as hypotheses for the beta.
+- **Different from Underpriced** on price and on the money trail to tax time, including donation
+  receipts.
+
+Still open:
+
+1. **Send the eBay consent request?** (Draft points below.) And accept that the current valuation
+   stays personal until it's resolved?
+2. **Constitution v2.0.0:** allow licensed, non-eBay data providers and user-owned data?
+3. **Paid data:** willing to spend ~$50 to $100/mo on PriceCharting or Keepa if Phase 1 shows games
+   or books need it?
+4. **Stack:** Expo (recommended) or Capacitor first for speed?
+5. **Founding-member offer:** how much off, and how do we take payment before the app is in the
+   stores (a Stripe link with a refund promise is the simple option)?
+6. **Tax review:** a tax pro to check the donation-receipt and tax-export copy, plus the legal read
+   on user-reported sale prices (B4) and own-account data (B3). Worth ~$300 to $1,000?
+7. **Housekeeping:** merge or close the 008 and timeout branches.
 
 ---
 
@@ -426,8 +488,8 @@ a $39/yr subscriber nets ~$33.
 
 To eBay Developer Technical Support / Developer Program, from the founder's developer account:
 
-- What it is: a mobile app that helps households decide which belongings are worth listing on eBay
-  and donates the rest. FLIP verdicts hand off to eBay's own listing flow.
+- What it is: a mobile app that helps people and part-time resellers decide which items are worth
+  listing on eBay, tracks the sales, and logs the rest as donations. FLIP verdicts hand off to eBay's own listing flow.
 - What we'd use: Browse API (app token) for identification and active-listing context; requested
   permission to show a coarse value band ("worth listing / borderline / not worth it") derived from
   that data, labelled as an estimate based on current listings.
