@@ -365,16 +365,23 @@ Growth Check. Paid tiers should have a quiet fair-use cap until then.
   whether any of them start selling. Recruit resellers from r/Flipping-type communities and local
   reseller groups, declutterers from my own network and a local Buy Nothing group. Use the PWA, or a
   Capacitor TestFlight build if the camera gets in the way.
-- **Paid-intent test.** In week 5, offer the resellers a founding-member price on Side Hustle or Pro
-  (for example half off for the first year), paid now and refundable if we don't launch. Saying "I'd
-  pay" is cheap. Paying is the real test.
+- **Paid-intent test, at full price, no discounts.** In week 5 every reseller hits a Side Hustle
+  paywall at the real price, $7.99 a month. If the beta is on a TestFlight build, it's a real
+  in-app purchase in Apple's sandbox, so nobody gets charged. If it's still the PWA, it's a "Start
+  Side Hustle, $7.99/mo" button that records the tap and then says plainly that nothing is charged
+  during the beta. Either way they have to choose the plan on purpose to keep unlimited scans and
+  the sales log. Then we ask one direct question: "Will you pay $7.99 a month when this launches?"
+  And we tell them beta access ends at launch, and watch whether they keep using it in weeks 5 and
+  6. A tap is cheap, and so is a yes. Choosing the plan, saying yes, *and* still scanning a week later
+  is a signal I'd trust. Launch-day conversion is the real proof (Phase 3).
 - **Measure:** scans per reseller per week, % of flips actually listed, reported sale price vs. the
   band, how many sales make it into the sales log, % of rip-its logged as donations, and how many
   declutterers list something.
 - **Interview 10 testers:** which features would you pay for? Is $7.99 or $19.99 a no-brainer, fair,
   or too much?
 - **Go criteria:**
-  - at least 5 of 14 resellers pay the founding price
+  - at least 6 of 14 resellers choose Side Hustle at full price **and** say yes to paying at launch
+  - at least 5 of those 6 are still scanning 30+ items a week in week 6
   - resellers average at least 30 scans a week by week 4
   - the band contains the real sale price at least 70% of the time on items that sold
   - at least 40% of resellers would be "very disappointed" if it went away (Sean Ellis test)
@@ -404,7 +411,7 @@ Growth Check. Paid tiers should have a quiet fair-use cap until then.
 
 ### 5.1 Success metrics (north star: dollars tracked per paying user per month)
 
-- **Paid conversion** from free to Side Hustle or Pro, and from founding-member to full price.
+- **Paid conversion** from free to Side Hustle or Pro, and from beta "yes" to actually paying at launch.
 - **Paid retention**, monthly churn under 8%.
 - **Dollars tracked:** sales logged plus donations logged per paying user. If people put their real
   money in it, they'll keep paying for it.
@@ -436,7 +443,7 @@ Growth Check. Paid tiers should have a quiet fair-use cap until then.
 3. **Underpriced and similar apps are already there** with sold comps and a $9.99 tier.
    *Mitigation:* don't fight on comps. Fight on price, the tax trail and honesty.
 4. **Resellers won't pay for another tool** when eBay Product Research is free and Underpriced
-   exists. *Mitigation:* the paid-intent test in Phase 1, a lower price, and the tax trail as a reason
+   exists. *Mitigation:* the full-price paid-intent test in Phase 1, a lower price, and the tax trail as a reason
    to stay.
 5. **Solo-dev bandwidth and process weight.** *Mitigation:* Phase 1 is deliberately throwaway; run the
    Spec Kit flow for Phase 2 code only.
@@ -448,8 +455,9 @@ Growth Check. Paid tiers should have a quiet fair-use cap until then.
 
 ### 5.4 Kill criteria (decide at the end of Phase 1)
 
-- **Fewer than 3 of 14 resellers pay the founding price.** Then resellers won't pay, and the
-  business doesn't work. Keep it as my own tool.
+- **Fewer than 3 of 14 resellers choose Side Hustle at full price and say they'll pay**, or most of
+  the ones who do stop scanning by week 6. Then resellers won't pay, and the business doesn't work.
+  Keep it as my own tool.
 - Resellers stop scanning: under 10 scans a week each by week 4 means the core loop isn't useful.
 - Band accuracy under 50% on items that actually sold means the data isn't good enough to ship.
 - eBay refuses consent **and** no compliant source covers at least two of the top three reseller
@@ -476,11 +484,67 @@ Still open:
 3. **Paid data:** willing to spend ~$50 to $100/mo on PriceCharting or Keepa if Phase 1 shows games
    or books need it?
 4. **Stack:** Expo (recommended) or Capacitor first for speed?
-5. **Founding-member offer:** how much off, and how do we take payment before the app is in the
-   stores (a Stripe link with a refund promise is the simple option)?
-6. **Tax review:** a tax pro to check the donation-receipt and tax-export copy, plus the legal read
+5. **Tax review:** a tax pro to check the donation-receipt and tax-export copy, plus the legal read
    on user-reported sale prices (B4) and own-account data (B3). Worth ~$300 to $1,000?
-7. **Housekeeping:** merge or close the 008 and timeout branches.
+6. **Housekeeping:** merge or close the 008 and timeout branches.
+
+---
+
+## 7. How we build it: Spec Kit, same as before
+
+I built this with Spec Kit and I'm sticking with it. Everything in this plan that changes product
+behavior goes through the same flow as specs 001 to 008: specify, plan, tasks, implement, under the
+constitution. That includes the v2.0.0 amendment. Any agent helping with the work (including Grok
+Bot) works inside this flow, not around it.
+
+### How Spec Kit is wired in this repo (checked 2026-11-02)
+
+- **Spec Kit 0.12.8.dev0**, initialized for the Claude integration with sh scripts and sequential
+  numbering (`.specify/init-options.json`, `.specify/integration.json`).
+- **Commands** are Claude skills in `.claude/skills/`: `speckit-specify`, `-clarify`, `-plan`,
+  `-tasks`, `-analyze`, `-implement`, `-checklist`, `-constitution`, `-taskstoissues`, plus two
+  added here, `speckit-converge` and `speckit-orchestrate`.
+- **Scripts** in `.specify/scripts/bash/`: `create-new-feature.sh` (next number + feature dir and
+  branch), `setup-plan.sh`, `setup-tasks.sh`, `check-prerequisites.sh`, `common.sh`.
+- **Templates** for spec, plan, tasks, checklist and constitution in `.specify/templates/`; the
+  constitution itself is `.specify/memory/constitution.md` (v1.1.0). Every plan has to pass its
+  Constitution Check gate.
+- **Workflow:** the bundled "Full SDD Cycle" in `.specify/workflows/speckit/workflow.yml`:
+  specify, a review gate, plan, tasks, implement.
+- **Orchestrator** (`/speckit-orchestrate`, added for spec 007): runs a feature through specify,
+  clarify, plan, tasks, analyze, implement, verify, converge, review and ship with tiered
+  subagents (`.claude/agents/sk-*.md`: spec-author, planner, tasker, analyst, implementer, chore,
+  test-runner, converger, reviewer). Two user checkpoints: approve before implementing, and approve
+  before push and PR. It keeps a resumable `run-log.md` per spec. It sizes work into S, M or L
+  tracks, and analyze and review only run for M and L.
+- **Guard rails:** `.claude/hooks/guard-subagent-bash.sh` stops build subagents from committing,
+  pushing, switching branches, starting or stopping the compose stack, using `gh`, touching the
+  production overlay, or running Node outside Docker. Only the orchestrator commits.
+- `.specify/feature.json` still points at `specs/007-environment-badge`.
+
+**One thing to watch:** `create-new-feature.sh` picks the next number by scanning `specs/` on the
+current branch. Spec 008 (`008-native-sheet-ui`) only exists on its unmerged branch, so a new
+feature started from `main` today would also get 008. Merge 008 first, or pass `--number`.
+
+### Proposed spec sequence
+
+| # | Spec | Phase | Notes |
+|---|---|---|---|
+| 008 | `native-sheet-ui` | 0 | Already specced and built; review and merge. The timeout fix goes in as a bug fix. |
+| — | Constitution v2.0.0 | 0 | Through `/speckit-constitution`, with a Sync Impact Report: compliant data only (official APIs within their license, founder-approved licensed providers, user-owned data). |
+| 009 | `fee-model` | 0 | Per-category final value fee plus the per-order fee, replacing the flat 13.25%. |
+| 010 | `price-source-and-bands` | 0–1 | The `PriceSource` interface, value bands with confidence and provenance, Browse limited to identification until consent. |
+| 011 | `sales-and-donation-log` | 1 | What I sold it for (B4/B5 calibration) and rip-it donations, device-local first. Needed for the beta metrics. |
+| 012 | `expo-app-shell` | 2 | Expo app, native barcode scanner, verdict sheet, a11y checks on device. Lives beside `web/`. |
+| 013 | `device-identity-and-persistent-limits` | 2 | Per-install identity instead of per-IP caps; cache and counters in Postgres. |
+| 014 | `session-scanning` | 2 | Bulk sessions and the session summary. |
+| 015 | `photo-identification` | 2 | Economics-gated, per-user caps, cost stated in the plan as Principle III requires. |
+| 016 | `accounts-and-deletion` | 2 | Optional sign-in, sync, in-app account deletion. |
+| 017 | `tiers-and-subscriptions` | 3 | Free, Side Hustle, Pro through RevenueCat; tier caps on the server. |
+| 018 | `tax-export` | 3 | Sales and donation export for tax time (Pro). |
+| 019 | `deploy-and-ci` | 1–3 | Production image, CI running the Docker test suites, one host. Could run as maintenance instead if it doesn't change behavior. |
+
+Numbers will shift if something new comes up. That's fine. The order matters more than the numbers.
 
 ---
 
