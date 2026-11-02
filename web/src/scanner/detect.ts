@@ -72,7 +72,11 @@ export type ScanHandle = {
    * while suspended is emitted normally (FR-010, contracts/sheet-states.md behaviour 3).
    */
   suspendFor(code: string): void;
-  /** Clear the suppression and the debounce state, so the same code can fire again. */
+  /**
+   * Arm the suppression to clear once a read differs from the suppressed code (including a
+   * code-free read), so the same code can fire again after it leaves the frame. The debounce
+   * state (`last`) is kept, so on re-entry that code fires on its first read, not two in a row.
+   */
   resume(): void;
 };
 
