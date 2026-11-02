@@ -35,6 +35,13 @@ export interface AppConfig {
   match: MatchConfig;
   port: number;
   /**
+   * Hang guard for eBay calls (token mint + Browse search) in milliseconds —
+   * not a latency budget. The sandbox routinely takes 2-4.5s to answer a
+   * search; this only aborts a connection that never resolves at all
+   * (founder direction: speed is a goal, never a cutoff).
+   */
+  ebayTimeoutMs: number;
+  /**
    * Fastify's `trustProxy` option, straight through. `false` (the default) means
    * request.ip is the connecting socket address; forwarding headers are ignored.
    * Parsed from TRUST_PROXY by parseTrustProxy in T010 — hard-coded false here
@@ -231,6 +238,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     realizationRate: loadRealizationRate(env),
     match: loadMatchConfig(env),
     port: numericSetting(env, 'PORT', 3000, (n) => Number.isInteger(n) && n >= 1 && n <= 65535),
+    ebayTimeoutMs: numericSetting(
+      env,
+      'EBAY_TIMEOUT_MS',
+      15000,
+      (n) => Number.isInteger(n) && n >= 1000 && n <= 120000,
+    ),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     webDistDir: path.resolve(process.cwd(), env.WEB_DIST_DIR ?? 'web/dist'),
   };
@@ -414,6 +427,7 @@ export function buildProductionDeps(
     env: config.ebayEnv,
     clientId: config.ebayClientId,
     clientSecret: config.ebayClientSecret,
+    timeoutMs: config.ebayTimeoutMs,
   });
   return {
     tokenManager,
@@ -423,6 +437,7 @@ export function buildProductionDeps(
         env: config.ebayEnv,
         marketplaceId: config.marketplaceId,
         tokenManager,
+        timeoutMs: config.ebayTimeoutMs,
       }),
       cache: new TtlCache({ ttlMs: config.cacheTtlMs }),
       rateLimiter: new RateLimiter({

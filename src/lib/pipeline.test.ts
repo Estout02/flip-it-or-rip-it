@@ -257,3 +257,42 @@ describe('coalescing', () => {
     expect(rateLimiter.ebayCallsToday()).toBe(1);
   });
 });
+
+describe('guardedClient cooldown gating (fix/ebay-timeout-hang-guard)', () => {
+  it('a timeout error (cooldown: false) does not start the cooldown — the next lookup proceeds', async () => {
+    const client = new DeferredClient();
+    const rateLimiter = new RateLimiter({ lookupDailyCap: 1000, ebayDailyCallBudget: 1000 });
+    const deps = makeDeps(client, rateLimiter);
+
+    const firstPromise = lookup({ title: T }, deps);
+    client.releaseError(
+      new EbayUnavailableError('eBay Browse search timed out after 15000ms', {
+        cooldown: false,
+      }),
+    );
+    await expect(firstPromise).rejects.toBeInstanceOf(EbayUnavailableError);
+    expect(rateLimiter.inCooldown()).toBe(false);
+
+    const secondPromise = lookup({ title: T }, deps);
+    client.release(titleHit(T));
+    const second = await secondPromise;
+    expect(second.noMarketData).toBe(false);
+    expect(client.calls).toHaveLength(2);
+  });
+
+  it('a cooldown: true error still starts the cooldown — the next lookup is refused', async () => {
+    const client = new DeferredClient();
+    const rateLimiter = new RateLimiter({ lookupDailyCap: 1000, ebayDailyCallBudget: 1000 });
+    const deps = makeDeps(client, rateLimiter);
+
+    const firstPromise = lookup({ title: T }, deps);
+    client.releaseError(
+      new EbayUnavailableError('eBay Browse search failed with HTTP 503'),
+    );
+    await expect(firstPromise).rejects.toBeInstanceOf(EbayUnavailableError);
+    expect(rateLimiter.inCooldown()).toBe(true);
+
+    await expect(lookup({ title: T }, deps)).rejects.toBeInstanceOf(EbayUnavailableError);
+    expect(client.calls).toHaveLength(1); // second call never reached the client
+  });
+});

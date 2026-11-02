@@ -172,6 +172,86 @@ describe('BrowseApiClient', () => {
       totalActive: 0,
     });
   });
+
+  it.each([429, 500, 503])(
+    'HTTP %i throws EbayUnavailableError with cooldown: true',
+    async (status) => {
+      const { fetchFn } = makeFetch(async () => searchResponse({}, status));
+      const client = makeClient(fetchFn);
+
+      await expect(client.search({ gtin: '9780345391803' })).rejects.toMatchObject({
+        cooldown: true,
+      });
+    },
+  );
+
+  it('a timeout is not retried and throws EbayUnavailableError with cooldown: false', async () => {
+    let attempt = 0;
+    const { fetchFn, searchCalls } = makeFetch(async () => {
+      attempt += 1;
+      const err = new DOMException('The operation was aborted.', 'TimeoutError');
+      throw err;
+    });
+    const client = makeClient(fetchFn);
+
+    await expect(client.search({ gtin: '9780345391803' })).rejects.toMatchObject({
+      cooldown: false,
+    });
+    expect(attempt).toBe(1);
+    expect(searchCalls()).toHaveLength(1);
+  });
+
+  it('a generic network error is still retried once', async () => {
+    let attempt = 0;
+    const { fetchFn, searchCalls } = makeFetch(async () => {
+      attempt += 1;
+      throw new TypeError('fetch failed');
+    });
+    const client = makeClient(fetchFn);
+
+    await expect(client.search({ gtin: '9780345391803' })).rejects.toBeInstanceOf(
+      EbayUnavailableError,
+    );
+    expect(searchCalls()).toHaveLength(2);
+  });
+
+  it('a configured timeoutMs is honored: a call slower than it aborts as a timeout', async () => {
+    const tokenManager = new EbayTokenManager({
+      env: 'sandbox',
+      clientId: 'id',
+      clientSecret: 'secret',
+      fetchFn: (async () => tokenResponse('tok-1')) as unknown as typeof fetch,
+    });
+    const client = new BrowseApiClient({
+      env: 'sandbox',
+      marketplaceId: 'EBAY_US',
+      tokenManager,
+      timeoutMs: 20,
+      fetchFn: (async (_url: unknown, init: unknown) => {
+        const signal = (init as RequestInit).signal;
+        return new Promise<Response>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            const reason = (signal as AbortSignal).reason;
+            reject(reason);
+          });
+        });
+      }) as unknown as typeof fetch,
+    });
+
+    await expect(client.search({ gtin: '9780345391803' })).rejects.toMatchObject({
+      cooldown: false,
+    });
+  });
+
+  it('a call faster than the default timeout (15000ms) succeeds untouched', async () => {
+    const { fetchFn } = makeFetch(async () => searchResponse({ itemSummaries: [], total: 0 }));
+    const client = makeClient(fetchFn);
+
+    await expect(client.search({ gtin: '9780345391803' })).resolves.toEqual({
+      listings: [],
+      totalActive: 0,
+    });
+  });
 });
 
 describe('BrowseApiClient — category transport and sort (spec 004)', () => {

@@ -92,6 +92,7 @@ const testConfig: AppConfig = {
   realizationRate: 1,
   match: MATCH_DEFAULTS,
   port: 0,
+  ebayTimeoutMs: 15000,
   trustProxy: false,
   webDistDir: ABSENT_WEB_DIST_DIR,
 };
@@ -873,6 +874,7 @@ describe('loadConfig — numeric settings', () => {
     ['VALUATION_CACHE_TTL_HOURS', 'cacheTtlMs', '0.5', 1_800_000],
     ['PROFIT_THRESHOLD_DEFAULT', 'defaultProfitThresholdCents', '12.5', 1250],
     ['PORT', 'port', '8080', 8080],
+    ['EBAY_TIMEOUT_MS', 'ebayTimeoutMs', '5000', 5000],
   ] as const)('%s=%s is read into config.%s', (envVar, field, raw, expected) => {
     const config = loadConfig({ [envVar]: raw });
     expect(config[field]).toBe(expected);
@@ -899,6 +901,10 @@ describe('loadConfig — numeric settings', () => {
     ['PORT', '0'],
     ['PORT', '70000'],
     ['PORT', 'x'],
+    ['EBAY_TIMEOUT_MS', 'abc'],
+    ['EBAY_TIMEOUT_MS', '500'],
+    ['EBAY_TIMEOUT_MS', '200000'],
+    ['EBAY_TIMEOUT_MS', '2.5'],
   ])('invalid %s=%s warns (naming the var) and falls back to the default', (envVar, raw) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     loadConfig({ [envVar]: raw });
@@ -918,6 +924,7 @@ describe('loadConfig — numeric settings', () => {
     expect(config.cacheTtlMs).toBe(86_400_000);
     expect(config.defaultProfitThresholdCents).toBe(1000);
     expect(config.port).toBe(3000);
+    expect(config.ebayTimeoutMs).toBe(15000);
     warn.mockRestore();
   });
 });
