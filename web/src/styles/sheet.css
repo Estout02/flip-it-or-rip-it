@@ -1,0 +1,172 @@
+/*
+ * Ground, chrome and the result sheet shell (spec 008-native-sheet-ui, research R4/R7/R8).
+ * No colour literal appears in this file — every value is a token from tokens.css.
+ */
+
+.ground {
+  position: fixed;
+  inset: 0;
+  background: var(--ground-static);
+}
+
+.ground--camera {
+  background: var(--viewfinder-bg);
+}
+
+.viewfinder__video {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.viewfinder__reticle {
+  position: absolute;
+  inset: var(--space-8) var(--space-6);
+  pointer-events: none;
+}
+
+.viewfinder__reticle::before,
+.viewfinder__reticle::after {
+  content: '';
+  position: absolute;
+  inline-size: var(--space-6);
+  block-size: var(--space-6);
+  border-color: var(--chrome-fg);
+  border-style: solid;
+  border-width: 0;
+}
+
+/* Four corner brackets, drawn with two pseudo-elements each mirrored via border sides. */
+.viewfinder__reticle::before {
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  border-start-start-radius: var(--radius-card);
+  border-block-start-width: 3px;
+  border-inline-start-width: 3px;
+  box-shadow: calc(100% - var(--space-6)) calc(100% - var(--space-6)) 0 -3px var(--chrome-fg);
+}
+
+.viewfinder__reticle::after {
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  border-start-end-radius: var(--radius-card);
+  border-block-start-width: 3px;
+  border-inline-end-width: 3px;
+  box-shadow: calc(-100% + var(--space-6)) calc(100% - var(--space-6)) 0 -3px var(--chrome-fg);
+}
+
+.pill {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: calc(var(--radius-sheet) + var(--space-6));
+  margin-inline: auto;
+  inline-size: fit-content;
+  max-inline-size: calc(100% - var(--space-8));
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--target);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
+  text-align: center;
+}
+
+.chrome {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-block-size: var(--header-height, 4rem);
+  padding: var(--space-2) var(--space-4);
+  /* Alpha 1, never translucent (FR-016): the chrome must stay legible over a live camera feed. */
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
+}
+
+.chrome__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: var(--target);
+  padding-inline: var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--chrome-fg);
+  font-weight: 600;
+}
+
+.sheet {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 10;
+  border-start-start-radius: var(--radius-sheet);
+  border-start-end-radius: var(--radius-sheet);
+  box-shadow: var(--sheet-shadow);
+  /* Opaque is the default; the glass ground is opt-in below (research R4) so legibility never
+     depends on backdrop-filter support or on prefers-reduced-transparency, which iOS doesn't expose. */
+  background: var(--sheet-opaque);
+  /* The fixed chrome bar sits above the sheet in the stacking order (z-index 20 vs. 10 below), so
+     letting the sheet grow into that band doesn't just look wrong — its top content is genuinely
+     covered and unreadable (axe correctly flags it: `color-contrast` `incomplete`,
+     `elmPartiallyObscuring`, at narrow widths where wrapped text makes resting/expanded content
+     tall enough to reach it, e.g. S12's saved-result note and S15's camera-unavailable copy at
+     320 px). Reserving the chrome's height here keeps the sheet's own overflow scroll — already in
+     place below — as the only way past that ceiling, the same way `.col-recent .recent` already
+     reserves it on desktop (layout.css). `.sheet--pane` (desktop) resets this to `none` and
+     `.sheet--full` (the Recent modal `<dialog>`) overrides it below: both are unaffected, since a
+     native `<dialog>` renders in the top layer, above the chrome regardless of z-index. */
+  max-block-size: calc(100dvh - var(--header-height, 4rem) - var(--kb-inset));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-block-end: max(env(safe-area-inset-bottom, 0px), var(--kb-inset));
+}
+
+html {
+  scroll-padding-block-end: var(--kb-inset);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  @media (prefers-reduced-transparency: no-preference) {
+    .sheet {
+      background: var(--sheet-glass);
+      -webkit-backdrop-filter: var(--sheet-blur);
+      backdrop-filter: var(--sheet-blur);
+    }
+  }
+}
+
+/* .sheet--resting sits at its content height (the default); .sheet--expanded may grow up to the
+   max-block-size set on .sheet above. Both classes exist as hooks for other stylesheets/JS. */
+
+.sheet--full {
+  inset-block-start: 0;
+  block-size: 100%;
+  max-block-size: 100dvh;
+}
+
+.sheet__grabber {
+  inline-size: 36px;
+  block-size: 4px;
+  margin: var(--space-2) auto;
+  border-radius: var(--radius-pill);
+  background: var(--hairline);
+}
+
+.sheet__body {
+  padding-inline: var(--space-4);
+  padding-block-end: var(--space-6);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheet {
+    transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1), opacity 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}

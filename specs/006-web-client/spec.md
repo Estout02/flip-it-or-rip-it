@@ -236,6 +236,15 @@ user.
 - **FR-008**: Scanning MUST be optional and progressive: offered only where the device and browser
   can support it, and degrading to manual entry with an explanation everywhere else.
 - **FR-009**: The camera MUST stop when a code is read, the user cancels, or the page is hidden.
+  - **Amended by spec 008 (`specs/008-native-sheet-ui/`) FR-011, 2026-09-26.** The "when a code is
+    read" clause is **superseded**: behind an open result sheet the camera now stays live, so
+    dismissing the sheet returns to a viewfinder that is already decoding and no permission is
+    re-requested. Decoding of the code that produced the open sheet is suspended instead (008 FR-010),
+    so a held barcode cannot double-charge a lookup. The camera is still released on cancel and on
+    page hide, and additionally when the user leaves the scanning flow (typing, Recent or Settings).
+    Read this requirement as: *the camera MUST stop when the user cancels, leaves the scanning flow,
+    or the page is hidden.* The founder accepted the battery and recording-indicator cost on
+    2026-09-26.
 - **FR-010**: Scanning MUST NOT send images anywhere. Recognition happens on the device.
 
 **Settings and history (device-local)**

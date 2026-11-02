@@ -36,10 +36,13 @@ The reason sentence is the API `reason`, shown beneath the label, except where o
 
 ### S2: FLIP / S3: FLIP_RISKY / S4: RIP (normal results)
 - Banner (label, eyebrow, reason).
-- **Hero number**: `describeProfit(profitCents)`, e.g. "+$22.07 profit" or "loses $3.20".
-- **Breakdown** `<dl>`: "Est. sale value" `estimatedValueCents`; "eBay fees" −`feesCents`;
-  "Shipping" −`shippingEstimateCents`; "What you paid" −cost (only when > 0); a rule; then
-  "Profit" `profitCents`. Money is right-aligned, in tabular numerals.
+- **Net figure (hero)**: `formatCents(profitCents)` in the verdict tint at 38 px/600, with the
+  caption "in your pocket" (profit ≥ 0) or "out of pocket — a loss" (profit < 0) in muted text
+  beneath it. (008)
+- **Breakdown `<dl>`**: "Sells for" `estimatedValueCents`; "eBay fees" −`feesCents`; "Shipping"
+  −`shippingEstimateCents`; "What you paid" −cost (only when > 0). Rows are separated by
+  hairlines; money is right-aligned in tabular numerals. There is no separate "Profit" row — the
+  hero figure and its caption carry that fact. (008)
 - **Match details**: "Matched: {matchedTitle}" (clamped to 2 lines on < 1024 px, with a
   `<details>`/"Show full title" toggle; full on desktop). Confidence: HIGH → no badge; MEDIUM →
   badge "Likely match — check the title".
@@ -49,6 +52,13 @@ The reason sentence is the API `reason`, shown beneath the label, except where o
   - WEAK → "Crowded market · {n} similar listings"
   - UNPROVEN → "No other sellers listing this right now"
 - Actions: **Check another** (primary; clears and focuses the input).
+- **Dismissal pair (008)**: the primary action and the control beneath it depend on the ground:
+
+  | Ground | Primary button | Second control beneath it |
+  |---|---|---|
+  | live viewfinder | `Scan the next one` (dismiss → viewfinder, decoding resumes) | `Check another` as a text button — collapses to rest, clears the input, focuses it |
+  | static (typed, or no camera) | `Check another` (existing S2 copy) — collapses to rest, clears, focuses the input | none; Escape and the back gesture still dismiss |
+
 - Focus: the verdict heading. Announcement: none extra (the heading receives focus).
 
 ### S5: UNCERTAIN
@@ -75,7 +85,9 @@ The reason sentence is the API `reason`, shown beneath the label, except where o
 ### S8: Error: limit (429)
 - The result area is an error panel with heading "You've hit today's limit". Body: "This network
   has used all {cap} free lookups for today. They reset at {time}." ({time} is the next 00:00 UTC in
-  local time, e.g. "8:00 PM".) Second line: "Your recent lookups are still here." (links to #recent).
+  local time, e.g. "8:00 PM".) Second line: "Your recent lookups are still here." — a **button**
+  with that exact visible text. On narrow viewports it opens the Recent sheet; at ≥ 1024 px, where
+  Recent is a visible column, it moves focus to the `#recent` region as before. (008)
 - Focus: the error heading. No Retry button (retrying can't help).
 
 ### S9: Error: unavailable (503)
@@ -114,14 +126,20 @@ The reason sentence is the API `reason`, shown beneath the label, except where o
   Settings button. Invalid input → inline error per S7 rules, scoped to the dialog.
 
 ### S15: Scanner
-- A full-screen modal `<dialog>` with a `<video>` (`playsinline`, `muted`, `aria-hidden="true"`),
-  a target frame, and the visible text "Point at a barcode". The Cancel button is focused first.
-- Detected: the dialog closes, the input is filled, a polite announcement says "Scanned {code}",
-  vibrate(50), and the lookup auto-submits.
-- Unsupported / denied / no camera: the dialog shows the heading "Camera not available" and the
+- The viewfinder is the **ground** behind the sheet, not a dialog: a `<video>` (`playsinline`,
+  `muted`, `aria-hidden="true"`), a corner-bracket reticle, and a status pill reading "Point at a
+  barcode" while searching and "Barcode found · {code}" on a decode. The chrome "Cancel" control
+  releases the camera and returns the ground to a static tone. The camera stays live behind an open
+  result sheet and is released on page hide, on Cancel, and on leaving the scanning flow (which
+  supersedes the previous stop-on-decode behavior). Camera failure shows the existing "Camera not
+  available" heading and body inside the resting sheet, with "Type it instead" focused. (008)
+- Detected: the input is filled, a polite announcement says "Scanned {code}", vibrate(50), and the
+  lookup auto-submits.
+- Unsupported / denied / no camera: the sheet shows the heading "Camera not available" and the
   body — denied: "Camera access was blocked. You can allow it in your browser settings, or type
   the number under the barcode." / unsupported: "This browser can't scan barcodes. Type the number
-  under the barcode instead." Button **Type it instead** closes the dialog and focuses the input.
+  under the barcode instead." / no camera: "No camera was found. Type the number under the barcode
+  instead." Button **Type it instead** returns to the resting sheet and focuses the input.
 - The Scan button is rendered only when `navigator.mediaDevices?.getUserMedia` exists. If a later
   failure proves scanning is unusable, the unsupported state explains it.
 
@@ -133,6 +151,11 @@ The reason sentence is the API `reason`, shown beneath the label, except where o
 - There are two visually hidden live regions (`role="status"` polite, `role="alert"` assertive),
   mounted at load and never re-created.
 - **Environment badge (spec 007)**: when `/api/meta` reports an `ebayEnv` other than `production`, the header shows a non-interactive "Test data" pill ("Test data — eBay sandbox" at ≥ 480 px; full text for assistive technology: "Test data — eBay sandbox. Results come from eBay's test environment, not real listings."). S6 then adds "You're using eBay's test environment, which has very few listings. This item may well be for sale on real eBay." Recent entries (name prefixed "Test data: ") and S12 results checked in sandbox carry a "Test data" marker. Unknown environment shows nothing. Details: `specs/007-environment-badge/`.
+- **Sheet (spec 008)**: below 1024 px every state is presented in one bottom sheet over a
+  persistent ground. The sheet is dismissible by its visible control, Escape and the back gesture;
+  it is never a modal, so the chrome (Recent, Settings, the badge) stays reachable while a result
+  is shown. Recent opens as its own full-height modal sheet with a "Close" control. At ≥ 1024 px
+  the three-pane layout is kept and restyled. (008)
 
 ## Accessibility checks per state (tests)
 

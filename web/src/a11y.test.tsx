@@ -1,13 +1,13 @@
-// T024: axe-core on every screen state reachable in jsdom → 0 violations.
-// jsdom has no layout, so color contrast is covered by the Playwright matrix (T036) and by the
-// verified token pairs in styles/tokens.css.
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
+// T024/T041: axe-core on every screen state reachable in jsdom → 0 violations.
+// jsdom has no layout, so color contrast is covered by the Playwright matrix and the verified
+// token pairs in styles/contrast.test.ts. jsdom also cannot evaluate `color-contrast` in axe's own
+// rules, which is why that gate and the e2e video-hidden pass exist alongside this file.
+import { fireEvent, screen, waitFor, within } from '@testing-library/preact';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Scanner } from './scanner/scanner';
+import type { VerdictResult } from './lib/types';
 import { mockApi, renderApp, typeAndSubmit } from './test/app-harness';
 import { flip, jsonResponse, noMarket, rip, risky, uncertain } from './test/fixtures';
-import type { VerdictResult } from './lib/types';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -26,6 +26,27 @@ async function resultState(result: VerdictResult, label: string, query = 'Chrono
   await screen.findByRole('heading', { level: 2, name: label });
 }
 
+/** A getUserMedia that never settles (so the camera stays "live") plus a native BarcodeDetector
+ * stub, so no decoder wasm is fetched in jsdom. */
+function stubLiveCamera() {
+  const stream = { getTracks: () => [] } as unknown as MediaStream;
+  vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) } });
+  vi.stubGlobal(
+    'BarcodeDetector',
+    Object.assign(
+      class {
+        detect = async () => [];
+      },
+      { getSupportedFormats: async () => ['ean_13'] },
+    ),
+  );
+}
+
+async function openCamera() {
+  fireEvent.click(screen.getByRole('button', { name: 'Scan' }));
+  await waitFor(() => expect(document.querySelector('.viewfinder__video')).toBeTruthy());
+}
+
 describe('axe: 0 violations per state', () => {
   it('S0 empty', async () => {
     mockApi(() => jsonResponse(flip));
@@ -37,7 +58,10 @@ describe('axe: 0 violations per state', () => {
     mockApi(() => new Promise<Response>(() => undefined));
     const { input } = renderApp();
     typeAndSubmit(input, 'Chrono Trigger SNES');
-    await screen.findByRole('button', { name: 'Checking…' });
+    // The lookup group (and its "Checking…" button) only lives in the resting sheet; the expanded
+    // sheet shows the skeleton instead, which is what loading actually looks like here.
+    await waitFor(() => expect(document.querySelector('.result[aria-busy="true"]')).toBeTruthy());
+    expect(document.querySelectorAll('#result-heading')).toHaveLength(0);
     await expectNoViolations();
   });
 
@@ -98,16 +122,22 @@ describe('axe: 0 violations per state', () => {
     await expectNoViolations();
   });
 
-  it('S12 result from history + S13 recent list with entries', async () => {
+  it('S12 result from history + S13 recent sheet with entries', async () => {
     await resultState(risky, 'Flip it — slow seller');
-    fireEvent.click(within(document.getElementById('recent')!).getAllByRole('listitem')[0]!.querySelector('button')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Check another' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Recent' });
+    fireEvent.click(within(dialog).getAllByRole('listitem')[0]!.querySelector('button')!);
     await screen.findByText(/Saved result, not refreshed\./);
     await expectNoViolations();
   });
 
   it('S13 clear-history confirm dialog', async () => {
     await resultState(flip, 'Flip it');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear history' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check another' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Recent' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear history' }));
     await screen.findByRole('dialog', { name: 'Clear all recent lookups on this device?' });
     await expectNoViolations();
   });
@@ -124,18 +154,69 @@ describe('axe: 0 violations per state', () => {
     await expectNoViolations();
   });
 
-  it('S15 scanner viewfinder and the denied fallback', async () => {
+  it('S15 viewfinder ground live, and the denied fallback (camera-unavailable notice)', async () => {
     let reject!: (e: unknown) => void;
     const getUserMedia = vi.fn(() => new Promise((_, r) => (reject = r)));
     vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia } });
-    // Native detector stub, so no decoder wasm is fetched in jsdom.
-    vi.stubGlobal('BarcodeDetector', Object.assign(class { detect = async () => []; }, { getSupportedFormats: async () => ['ean_13'] }));
-    const { container } = render(<Scanner onCode={vi.fn()} onCancel={vi.fn()} onTypeInstead={vi.fn()} />);
-    await screen.findByRole('dialog', { name: 'Point at a barcode' });
-    await expectNoViolations(container);
+    vi.stubGlobal(
+      'BarcodeDetector',
+      Object.assign(
+        class {
+          detect = async () => [];
+        },
+        { getSupportedFormats: async () => ['ean_13'] },
+      ),
+    );
+    mockApi(() => jsonResponse(flip));
+    renderApp();
+    await openCamera();
+    await expectNoViolations();
+    // The video mounts (and openCamera resolves) before startScan's effect actually calls
+    // getUserMedia — wait for the real call, or `reject` may still be unassigned (flaky).
     await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
     reject(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
     await screen.findByRole('heading', { name: 'Camera not available' });
-    await expectNoViolations(container);
+    await expectNoViolations();
+  });
+});
+
+describe('N1–N4: sheet-over-ground combinations (spec 008, contracts/sheet-states.md)', () => {
+  it('N1 resting over static: no video, no pill, no reticle, the S0 explainer, axe clean', async () => {
+    mockApi(() => jsonResponse(flip));
+    const { container } = renderApp();
+    expect(container.querySelector('video')).toBeNull();
+    expect(container.querySelector('.pill')).toBeNull();
+    expect(container.querySelector('.viewfinder__reticle')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Scan or type an item' })).toBeTruthy();
+    await expectNoViolations();
+  });
+
+  it('N2 resting over a live viewfinder: axe clean, chrome Cancel focused', async () => {
+    stubLiveCamera();
+    mockApi(() => jsonResponse(flip));
+    renderApp();
+    await openCamera();
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    await expectNoViolations();
+  });
+
+  it('N3 result over the live viewfinder', async () => {
+    stubLiveCamera();
+    mockApi(() => jsonResponse(flip));
+    const { input } = renderApp();
+    await openCamera();
+    typeAndSubmit(input, 'Chrono Trigger SNES');
+    await screen.findByRole('heading', { level: 2, name: 'Flip it' });
+    expect(document.querySelector('.viewfinder__video')).toBeTruthy();
+    await expectNoViolations();
+  });
+
+  it('N4 the Recent sheet open over an expanded result', async () => {
+    await resultState(flip, 'Flip it');
+    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
+    await screen.findByRole('dialog', { name: 'Recent' });
+    expect(screen.getByRole('heading', { level: 2, name: 'Flip it' })).toBeTruthy();
+    await expectNoViolations();
   });
 });

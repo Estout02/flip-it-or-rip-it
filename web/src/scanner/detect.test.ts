@@ -55,23 +55,46 @@ describe('startScan', () => {
     expect(getUserMedia).toHaveBeenCalledWith({ video: { facingMode: { ideal: 'environment' } }, audio: false });
   });
 
-  it('accepts after two identical consecutive reads and stops every track', async () => {
+  /**
+   * Sets up a fake stream + detector that yields `reads` in order, then repeats the last item
+   * forever (steady state) once exhausted — so a test can wait past its scripted frames without
+   * the detector ever returning to "no code" behind its back. Drives ticks via a fake rAF.
+   */
+  function harness(reads: Array<Array<{ rawValue: string }>>) {
     const stop = vi.fn();
-    const stream = { getTracks: () => [{ stop }, { stop }] } as unknown as MediaStream;
+    const track = { stop, readyState: 'live' as const };
+    const stream = { getTracks: () => [track, { ...track }] } as unknown as MediaStream;
     vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) } });
-    const reads = [[{ rawValue: '111' }], [{ rawValue: '9780345391803' }], [], [{ rawValue: '9780345391803' }]];
-    const detector = { detect: vi.fn(async () => reads.shift() ?? []) };
+    const queue = [...reads];
+    let steady: Array<{ rawValue: string }> = [];
+    const detector = {
+      detect: vi.fn(async () => {
+        if (queue.length) steady = queue.shift()!;
+        return steady;
+      }),
+    };
     const video = document.createElement('video');
     Object.defineProperty(video, 'readyState', { value: 4 });
     video.play = vi.fn().mockResolvedValue(undefined);
     let t = 0;
     vi.spyOn(performance, 'now').mockImplementation(() => (t += 200));
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0));
+    return { stop, video, detector };
+  }
+
+  /** Lets a handful of real ticks elapse (the fake rAF chains via setTimeout(0)). */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+  it('emits after two identical consecutive reads and keeps the stream live', async () => {
+    const { stop, video, detector } = harness([[{ rawValue: '111' }], [{ rawValue: '9780345391803' }], [], [{ rawValue: '9780345391803' }]]);
     const onCode = vi.fn();
     await startScan(video, onCode, new AbortController().signal, async () => detector);
     await vi.waitFor(() => expect(onCode).toHaveBeenCalledWith('9780345391803'));
     expect(onCode).toHaveBeenCalledTimes(1);
-    expect(stop).toHaveBeenCalledTimes(2);
+    expect(stop).not.toHaveBeenCalled();
+    const stream = video.srcObject as MediaStream;
+    expect((stream.getTracks()[0] as unknown as { readyState: string }).readyState).toBe('live');
+    expect(video.srcObject).toBe(stream);
   });
 
   it('abort stops the camera', async () => {
@@ -85,5 +108,51 @@ describe('startScan', () => {
     await startScan(video, vi.fn(), ac.signal, async () => ({ detect: async () => [] }));
     ac.abort();
     expect(stop).toHaveBeenCalled();
+    expect(video.srcObject).toBeNull();
+  });
+
+  describe('suspendFor / resume (FR-010)', () => {
+    it('suspendFor(code) then two more identical frames → onCode still called once', async () => {
+      const { video, detector } = harness([[{ rawValue: '9780345391803' }], [{ rawValue: '9780345391803' }]]);
+      const onCode = vi.fn();
+      const handle = await startScan(video, onCode, new AbortController().signal, async () => detector);
+      await vi.waitFor(() => expect(onCode).toHaveBeenCalledTimes(1));
+      handle.suspendFor('9780345391803');
+      await settle(); // several more identical frames elapse under steady state
+      expect(onCode).toHaveBeenCalledTimes(1);
+    });
+
+    it('a different code decoded while suspended emits normally', async () => {
+      const { video, detector } = harness([[{ rawValue: '9780345391803' }], [{ rawValue: '9780345391803' }]]);
+      const onCode = vi.fn();
+      const handle = await startScan(video, onCode, new AbortController().signal, async () => detector);
+      await vi.waitFor(() => expect(onCode).toHaveBeenCalledTimes(1));
+      handle.suspendFor('9780345391803');
+      detector.detect.mockImplementation(async () => [{ rawValue: '9780000000002' }]);
+      await vi.waitFor(() => expect(onCode).toHaveBeenCalledWith('9780000000002'));
+      expect(onCode).toHaveBeenCalledTimes(2);
+    });
+
+    it('after resume(), two more identical frames of the suspended code still do not emit', async () => {
+      const { video, detector } = harness([[{ rawValue: '9780345391803' }], [{ rawValue: '9780345391803' }]]);
+      const onCode = vi.fn();
+      const handle = await startScan(video, onCode, new AbortController().signal, async () => detector);
+      await vi.waitFor(() => expect(onCode).toHaveBeenCalledTimes(1));
+      handle.suspendFor('9780345391803');
+      handle.resume();
+      await settle(); // the code never leaves the frame, so the suppression is never cleared
+      expect(onCode).toHaveBeenCalledTimes(1);
+    });
+
+    it('after resume() plus one code-free frame, the same code emits a second time', async () => {
+      const { video, detector } = harness([[{ rawValue: '9780345391803' }], [{ rawValue: '9780345391803' }]]);
+      const onCode = vi.fn();
+      const handle = await startScan(video, onCode, new AbortController().signal, async () => detector);
+      await vi.waitFor(() => expect(onCode).toHaveBeenCalledTimes(1));
+      handle.suspendFor('9780345391803');
+      handle.resume();
+      detector.detect.mockImplementationOnce(async () => []); // the code-free frame that lifts the suppression
+      await vi.waitFor(() => expect(onCode).toHaveBeenCalledTimes(2));
+    });
   });
 });

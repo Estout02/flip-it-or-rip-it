@@ -1,6 +1,6 @@
 // Shared helpers for App-level tests: a routed fetch stub and small interaction helpers.
-import { fireEvent, render, screen } from '@testing-library/preact';
-import { vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { expect, vi } from 'vitest';
 import { App } from '../app';
 import { resetMetaForTests } from '../lib/api';
 import { resetStorageForTests } from '../lib/storage';
@@ -38,4 +38,23 @@ export function renderApp() {
 export function typeAndSubmit(input: HTMLInputElement, value: string) {
   fireEvent.input(input, { target: { value } });
   fireEvent.submit(input.form!);
+}
+
+/** The single result sheet, at either width. */
+export function sheet(container: Element): HTMLElement | null {
+  return container.querySelector('.sheet');
+}
+
+/** Types and submits, then waits for the sheet to expand. Re-parenting the lookup group across
+ * a resting → expanded transition detaches `input` (T032's "one ordered block" moves into
+ * `ResultPanel` instead), so this looks the sheet up fresh from `document` rather than from it. */
+export async function expandSheet(input: HTMLInputElement, value: string): Promise<void> {
+  typeAndSubmit(input, value);
+  await waitFor(() => expect(document.querySelector('.sheet--expanded, .sheet--pane')).toBeTruthy());
+}
+
+/** Clicks Scan and waits for the live camera ground to mount. */
+export async function startCamera(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: 'Scan' }));
+  await waitFor(() => expect(document.querySelector('.ground--camera')).toBeTruthy());
 }

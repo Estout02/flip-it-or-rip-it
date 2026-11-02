@@ -3,12 +3,16 @@ import { noMarket, risky, uncertain, flip } from '../test/fixtures';
 import {
   BASIS_NOTE,
   competitionPhrase,
+  DISMISS_SCAN_NEXT,
   isTestEnv,
+  MONEY_ROWS,
+  netCaption,
   NO_MARKET_REASON,
   nextUtcMidnightLocal,
   reasonFor,
   recentProfitPhrase,
   SANDBOX_NO_MARKET,
+  SCANNER_COPY,
   TEST_DATA_EXPLAIN,
   TEST_DATA_LABEL,
   TEST_DATA_WIDE,
@@ -52,6 +56,30 @@ describe('verdict copy (verbatim from ui-states.md)', () => {
     expect(recentProfitPhrase(flip)).toBe('+$22.07 profit');
     expect(recentProfitPhrase(noMarket)).toBe('no listings found');
     expect(recentProfitPhrase(uncertain)).toBe('no reliable price');
+  });
+});
+
+describe('spec 008 copy additions', () => {
+  it('netCaption picks profit vs loss', () => {
+    expect(netCaption(0)).toBe('in your pocket');
+    expect(netCaption(2207)).toBe('in your pocket');
+    expect(netCaption(-320)).toBe('out of pocket — a loss');
+  });
+
+  it('MONEY_ROWS labels', () => {
+    expect(MONEY_ROWS).toEqual({ value: 'Sells for', fees: 'eBay fees', shipping: 'Shipping', cost: 'What you paid' });
+  });
+
+  it('SCANNER_COPY.found interpolates the code', () => {
+    expect(SCANNER_COPY.found('9780345391803')).toBe('Barcode found · 9780345391803');
+  });
+
+  it('DISMISS_SCAN_NEXT', () => {
+    expect(DISMISS_SCAN_NEXT).toBe('Scan the next one');
+  });
+
+  it('SCANNER_COPY.noCamera', () => {
+    expect(SCANNER_COPY.noCamera).toBe('No camera was found. Type the number under the barcode instead.');
   });
 });
 

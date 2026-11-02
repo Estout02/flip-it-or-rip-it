@@ -51,6 +51,14 @@ describe('MatchDetails', () => {
     render(<MatchDetails result={flip} />);
     expect(screen.queryByRole('button')).toBeNull();
   });
+
+  it('wraps the badge and the facts list in a single .match__meta row', () => {
+    const { container } = render(<MatchDetails result={rip} />);
+    const meta = container.querySelector('.match__meta')!;
+    expect(meta).toBeTruthy();
+    expect(meta.querySelector('.badge')).toBeTruthy();
+    expect(meta.querySelector('.facts')).toBeTruthy();
+  });
 });
 
 describe('BasisNote', () => {

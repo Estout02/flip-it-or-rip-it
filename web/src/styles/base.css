@@ -16,8 +16,8 @@ html {
 
 body {
   min-block-size: 100dvh;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--ground-static);
+  color: var(--ink);
   font-family: var(--font);
   font-size: var(--step-0);
   line-height: 1.5;
@@ -79,6 +79,14 @@ summary {
   outline-offset: 2px;
 }
 
+/* Over the opaque chrome/ground/pill (FR-016) the ordinary --focus ring can lose contrast, so
+   those surfaces get the dedicated --chrome-focus ring instead. */
+.chrome :focus-visible,
+.ground :focus-visible,
+.pill:focus-visible {
+  outline-color: var(--chrome-focus);
+}
+
 /* Programmatic focus targets (verdict and error headings). */
 [tabindex='-1']:focus {
   outline: none;
@@ -112,8 +120,8 @@ summary {
   min-block-size: var(--target);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-sm);
-  background: var(--btn-bg);
-  color: var(--btn-fg);
+  background: var(--ink);
+  color: var(--sheet-opaque);
   font-weight: 600;
   text-decoration: none;
   transform: translateY(-200%);

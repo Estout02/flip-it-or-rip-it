@@ -1,49 +1,163 @@
-// One screen: scan or type → verdict → next. Wires the lookup machine, device-local settings
-// and history, the lazily loaded scanner, and the dialogs.
+// One screen: scan or type → verdict → next. Wires the lookup machine, device-local settings and
+// history, the lazily loaded viewfinder, and the sheet (spec 008, contracts/sheet-states.md).
+//
+// A single `desktop` flag (from useMediaQuery) decides the whole layout split: which columns
+// render, where the lookup group lives, and whether the sheet is a bottom sheet or a pane. It is
+// read once and threaded everywhere so the markup and the CSS breakpoint can never disagree.
 import type { FunctionComponent } from 'preact';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { Header } from './components/Header';
+import { Icon } from './components/Icon';
 import { LiveRegion } from './components/LiveRegion';
-import { LookupForm, type LookupFormHandle } from './components/LookupForm';
+import { INPUT_ID, LookupForm, type LookupFormHandle } from './components/LookupForm';
 import { RecentList } from './components/RecentList';
-import { ResultPanel } from './components/ResultPanel';
+import { APP_TITLE, EmptyState, ResultPanel } from './components/ResultPanel';
+import { Sheet } from './components/Sheet';
 import { SettingsDialog } from './components/SettingsDialog';
+import { RESULT_HEADING_ID } from './components/VerdictBanner';
 import { announce } from './lib/announce';
 import { DEFAULT_META, getMeta } from './lib/api';
+import { classify } from './lib/classify';
 import { formatCents } from './lib/money';
+import type { ScanFailure } from './scanner/detect';
 import { loadSettings, saveSettings, storageAvailable } from './lib/storage';
-import type { LookupInput, Meta, Settings } from './lib/types';
+import type { HistoryEntry, LookupInput, Meta, Settings } from './lib/types';
 import { useLookup } from './lib/use-lookup';
+import { useMediaQuery } from './lib/use-media-query';
+import { useViewportInset } from './lib/use-viewport-inset';
 import { SCANNER_COPY, STORAGE_UNAVAILABLE } from './lib/verdict-copy';
 
-type ScannerProps = { onCode(code: string): void; onCancel(): void; onTypeInstead(): void };
+/** Which surface is behind the sheet (data-model.md §1). Exactly one at a time. */
+type Ground = { kind: 'static' } | { kind: 'camera'; lastCode: string | null } | { kind: 'unavailable'; reason: ScanFailure };
+
+type Overlay = 'none' | 'recent' | 'settings';
+
+type ViewfinderProps = {
+  onCode(code: string): void;
+  onFailure(reason: ScanFailure): void;
+  suspendedCode: string | null;
+  lastCode?: string | null;
+  presentation?: 'ground' | 'card';
+};
 
 function cameraCapable(): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function';
 }
 
+function unavailableBody(reason: ScanFailure): string {
+  if (reason === 'denied') return SCANNER_COPY.denied;
+  if (reason === 'no-camera') return SCANNER_COPY.noCamera;
+  return SCANNER_COPY.unsupported;
+}
+
 export function App() {
+  const desktop = useMediaQuery('(min-width: 1024px)');
+  useViewportInset();
+
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   const [meta, setMeta] = useState<Meta>(DEFAULT_META);
   const lookup = useLookup(meta.ebayEnv);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [scanOpen, setScanOpen] = useState(false);
-  const [ScannerView, setScannerView] = useState<FunctionComponent<ScannerProps> | null>(null);
+  const [ground, setGround] = useState<Ground>({ kind: 'static' });
+  const [sheetView, setSheetView] = useState<'resting' | 'expanded'>('resting');
+  const [overlay, setOverlay] = useState<Overlay>('none');
+  // Lifted out of <LookupForm> (which only lives in the resting sheet at narrow widths) so the
+  // draft text survives every resting ↔ expanded remount instead of being destroyed with it.
+  const [query, setQuery] = useState('');
+  // True once the sheet has ever expanded — the S0-vs-"return from a dismissal" distinction that
+  // decides whether the (re)mounted lookup input deserves focus (see `autoFocus` below).
+  const [everExpanded, setEverExpanded] = useState(false);
+  const [ViewfinderView, setViewfinderView] = useState<FunctionComponent<ViewfinderProps> | null>(null);
   const [storageOk] = useState(() => storageAvailable());
   const [canScan] = useState(cameraCapable);
 
   const formRef = useRef<LookupFormHandle>(null);
   const scanButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const recentButtonRef = useRef<HTMLButtonElement>(null);
+  const typeInsteadRef = useRef<HTMLButtonElement>(null);
   const settingsOpener = useRef<HTMLElement | null>(null);
+  // Recent is opened from two different controls — the chrome button and, on S8, the error
+  // panel's "Your recent lookups are still here." button — so a fixed `recentButtonRef` (which
+  // only ever points at the chrome one) can't be the close-focus target (contracts/sheet-states.md
+  // behaviour rule 10: focus returns to whichever control opened it). Same pattern as
+  // `settingsOpener` above: remember the real opener at open time.
+  const recentOpener = useRef<HTMLElement | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const loadingRef = useRef(false);
   loadingRef.current = lookup.state.status === 'loading';
+  const wasScanning = useRef(false);
+  const selectedFromRecent = useRef(false);
+  const prevGroundKind = useRef(ground.kind);
 
   useEffect(() => {
     void getMeta().then(setMeta);
     if (!storageOk) announce(STORAGE_UNAVAILABLE, 'polite');
   }, []);
+
+  // FR-011 release trigger: leaving the scanning flow by focusing/typing in the lookup input.
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      if ((e.target as HTMLElement | null)?.id !== INPUT_ID) return;
+      setGround((g) => (g.kind === 'camera' ? { kind: 'static' } : g));
+    };
+    document.addEventListener('focusin', onFocusIn);
+    return () => document.removeEventListener('focusin', onFocusIn);
+  }, []);
+
+  // FR-011 release trigger: leaving the scanning flow by opening Recent or Settings.
+  useEffect(() => {
+    if (overlay !== 'none') setGround((g) => (g.kind === 'camera' ? { kind: 'static' } : g));
+  }, [overlay]);
+
+  // FR-011: released on page hide; re-acquired on return, with no new permission prompt (the
+  // browser remembers a granted permission — see data-model.md §1).
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        setGround((g) => {
+          if (g.kind !== 'camera') return g;
+          wasScanning.current = true;
+          return { kind: 'static' };
+        });
+      } else if (wasScanning.current) {
+        wasScanning.current = false;
+        setGround({ kind: 'camera', lastCode: null });
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
+  // Entering the camera flow moves focus to the chrome Cancel button (contracts/sheet-states.md
+  // S15 state-map row).
+  useEffect(() => {
+    if (ground.kind === 'camera' && prevGroundKind.current !== 'camera') cancelButtonRef.current?.focus();
+    if (ground.kind === 'unavailable') typeInsteadRef.current?.focus();
+    prevGroundKind.current = ground.kind;
+  }, [ground]);
+
+  // ResultPanel (which normally owns the document.title effect) isn't mounted while resting at
+  // narrow widths, so nothing would ever set the title back to the plain app name after a result.
+  useEffect(() => {
+    if (!desktop && sheetView === 'resting') document.title = APP_TITLE;
+  }, [desktop, sheetView]);
+
+  // S7 (server validation): the result reverts to its pre-loading content, which the narrow sheet
+  // has nowhere to show (the lookup group lives in the resting sheet, not the expanded one) — so
+  // collapse to rest, where the inline error is visible next to the input. The query is untouched:
+  // it lives in App state now, so this remount no longer wipes what the user typed.
+  useEffect(() => {
+    if (!desktop && lookup.state.status === 'error' && lookup.state.error.kind === 'validation') {
+      setSheetView('resting');
+    }
+  }, [lookup.state, desktop]);
+
+  // Once the sheet has expanded at least once, every later return to rest deserves an input focus
+  // (it's a deliberate "back to typing" moment, not the initial page load).
+  useEffect(() => {
+    if (sheetView === 'expanded') setEverExpanded(true);
+  }, [sheetView]);
 
   const submit = useCallback(
     (input: Omit<LookupInput, 'profitThresholdCents'>) => {
@@ -51,102 +165,323 @@ export function App() {
       const t = settingsRef.current.profitThresholdCents;
       if (t !== null) full.profitThresholdCents = t;
       lookup.submit(full);
+      setSheetView('expanded');
     },
     [lookup.submit],
   );
 
-  const checkAnother = useCallback(() => formRef.current?.clear(), []);
+  // Collapses the sheet, and — unless the camera is live — clears and refocuses the input. Never
+  // touches the lookup machine (research R13): a request dismissed mid-flight keeps running and is
+  // still saved to history when it resolves. Clearing is now an ordinary, ordered state write
+  // (`setQuery('')`) instead of an imperative call raced against `<LookupForm>`'s remount.
+  const dismiss = useCallback(() => {
+    setSheetView('resting');
+    if (ground.kind === 'camera') {
+      setGround((g) => (g.kind === 'camera' ? { ...g, lastCode: null } : g));
+      cancelButtonRef.current?.focus();
+    } else {
+      setQuery('');
+      lookup.clearFieldError();
+      formRef.current?.resetCost();
+      formRef.current?.focusInput();
+    }
+  }, [ground.kind, lookup.clearFieldError]);
+
+  // The secondary, always-available dismissal (R-D, contracts/copy-additions.md §3: "collapses to
+  // rest, clears the input, focuses it"). Unlike a bare Escape/back-gesture dismiss (`dismiss`,
+  // which keeps a live camera scanning) and unlike the camera-only primary "Scan the next one"
+  // (`scanNext`, which also keeps it live), "Check another" always releases the camera ground —
+  // it is the boring, unconditional way back to a blank typed lookup. It also resets the lookup
+  // machine back to idle, the fix that makes the resting/idle S0 copy return reliably (it
+  // previously only cleared the input, leaving the last verdict on screen at desktop).
+  const checkAnother = useCallback(() => {
+    lookup.reset();
+    setSheetView('resting');
+    setGround((g) => (g.kind === 'camera' ? { kind: 'static' } : g));
+    setQuery('');
+    lookup.clearFieldError();
+    formRef.current?.resetCost();
+    formRef.current?.focusInput();
+  }, [lookup.reset, lookup.clearFieldError]);
+
+  // R-D "camera" ground: dismiss to the live viewfinder; decoding resumes because lastCode clears.
+  const scanNext = useCallback(() => {
+    lookup.reset();
+    setSheetView('resting');
+    setGround((g) => (g.kind === 'camera' ? { ...g, lastCode: null } : g));
+    cancelButtonRef.current?.focus();
+  }, [lookup.reset]);
 
   // Remember the opener explicitly: Safari doesn't focus buttons on click, so
   // document.activeElement can't be trusted to restore focus on close.
   const openSettings = (e: Event) => {
     settingsOpener.current = e.currentTarget as HTMLElement;
-    setSettingsOpen(true);
+    setOverlay('settings');
+  };
+  const closeSettings = () => {
+    setOverlay('none');
+    settingsOpener.current?.focus();
   };
 
-  // The scanner chunk (and its decoder) is imported only on the first Scan tap.
-  const openScanner = async () => {
-    if (!ScannerView) {
+  const openRecent = (e: Event) => {
+    recentOpener.current = e.currentTarget as HTMLElement;
+    setOverlay('recent');
+  };
+  // `onClose` fires from the Recent `<dialog>`'s real `close` event (via `useModal`) — i.e. only
+  // once the sheet has genuinely finished closing, never before. That's what makes it safe to move
+  // focus to the result heading here: a modal `<dialog>` makes everything outside it inert, so
+  // ResultPanel's own focus effect (which runs on the same commit as the selection, while the
+  // dialog is still technically open) would silently no-op if it tried instead.
+  //
+  // The non-selection branch is the *only* place that moves focus back to the opener, and it now
+  // agrees with the real `<dialog>`'s own native restore-to-previously-focused-element behaviour
+  // (which our jsdom polyfill doesn't implement, but real browsers do): both target `recentOpener`,
+  // because that's genuinely what had focus when `showModal()` ran. Before this fix the two
+  // disagreed — this call always jumped to the chrome button, even when Recent had been opened from
+  // the S8 error panel's button — and the native restore only briefly, invisibly, got it right
+  // before this overwrote it a tick later. There is no longer a race to "win": recomputing the same
+  // target here is redundant with the native restore, not competing with it.
+  const closeRecent = useCallback(() => {
+    setOverlay('none');
+    if (selectedFromRecent.current) {
+      selectedFromRecent.current = false;
+      document.getElementById(RESULT_HEADING_ID)?.focus();
+    } else {
+      recentOpener.current?.focus();
+    }
+  }, []);
+
+  const showEntry = useCallback(
+    (entry: HistoryEntry) => {
+      // Only narrow widths route through the Recent `<dialog>` and its `onClose` (closeRecent);
+      // arming this at desktop, where that never fires, would leave it stuck for a later narrow
+      // session after a resize.
+      if (!desktop) selectedFromRecent.current = true;
+      lookup.showEntry(entry);
+      setSheetView('expanded');
+      setOverlay('none');
+    },
+    [lookup.showEntry, desktop],
+  );
+
+  // The viewfinder chunk (and its decoder) is imported only on the first Scan tap, so the typed
+  // path never downloads it (FR-009, SC-004).
+  const openScanner = useCallback(async () => {
+    if (!ViewfinderView) {
       try {
-        const mod = await import('./scanner/scanner');
-        setScannerView(() => mod.Scanner);
+        const mod = await import('./scanner/viewfinder');
+        setViewfinderView(() => mod.Viewfinder);
       } catch {
         announce(SCANNER_COPY.unsupported, 'assertive');
         formRef.current?.focusInput();
         return;
       }
     }
-    setScanOpen(true);
+    setGround({ kind: 'camera', lastCode: null });
+  }, [ViewfinderView]);
+
+  // Chrome Cancel has no documented refocus target in contracts/sheet-states.md — the button
+  // itself unmounts the instant onCancelCamera runs (Header only renders it while the ground is
+  // camera), so without an explicit target focus silently drops to document.body (sheet-states.md
+  // behaviour rule 2: "Never document.body"). Resting: there's nothing to show but the lookup
+  // group, so Scan (the control that started this) gets focus back. Expanded: a result (or its
+  // loading skeleton) is what's visible, so the result region takes it instead, same as every
+  // other result-focus target in this file.
+  const cancelCamera = () => {
+    setGround({ kind: 'static' });
+    if (sheetView === 'expanded') {
+      (document.getElementById(RESULT_HEADING_ID) ?? document.querySelector<HTMLElement>('.result'))?.focus();
+    } else {
+      scanButtonRef.current?.focus();
+    }
+  };
+
+  const typeInstead = () => {
+    setGround({ kind: 'static' });
+    formRef.current?.focusInput();
   };
 
   const onCode = (code: string) => {
-    setScanOpen(false);
-    const form = formRef.current;
-    if (!form) return;
-    form.setValue(code);
+    setGround((g) => (g.kind === 'camera' ? { ...g, lastCode: code } : g));
+    setQuery(code);
     navigator.vibrate?.(50);
     if (loadingRef.current) {
       // A lookup is already in flight: don't fire another; let the user verify the code.
       announce(`Scanned ${code}`, 'polite');
-      form.focusInput();
+      formRef.current?.focusInput();
       return;
     }
-    form.submit();
+    // Must not route through <LookupForm> — at narrow widths the lookup group (and the form)
+    // exists only in the resting sheet (T032). Once a first scan's result is showing, the sheet
+    // is expanded and `formRef.current` is null, so a second decode submitted through the form
+    // ref would silently no-op (SC-003: one Scan tap must decode a run of barcodes, not just one).
+    // App owns the query now, so it classifies and submits the code directly instead.
+    const c = classify(code);
+    submit(c.ok ? (c.kind === 'identifier' ? { identifier: c.value } : { title: c.value }) : { identifier: code });
     // After submit, so "Checking…" doesn't replace the scan confirmation.
     announce(`Scanned ${code}. Checking…`, 'polite');
   };
 
+  const onScanFailure = (reason: ScanFailure) => setGround({ kind: 'unavailable', reason });
+
   const threshold = settings.profitThresholdCents ?? meta.defaultProfitThresholdCents;
+
+  const viewfinder =
+    ground.kind === 'camera' && ViewfinderView ? (
+      <ViewfinderView
+        onCode={onCode}
+        onFailure={onScanFailure}
+        suspendedCode={ground.lastCode}
+        lastCode={ground.lastCode}
+        presentation={desktop ? 'card' : 'ground'}
+      />
+    ) : null;
+
+  const cameraNotice = ground.kind === 'unavailable' && (
+    <div class="camera-notice">
+      <Icon name="alert" />
+      <h2>{SCANNER_COPY.unavailableHeading}</h2>
+      <p>{unavailableBody(ground.reason)}</p>
+      <button type="button" class="btn btn--primary" ref={typeInsteadRef} onClick={typeInstead}>
+        {SCANNER_COPY.typeInstead}
+      </button>
+    </div>
+  );
+
+  const thresholdLine = (
+    <p class="threshold">
+      <span>
+        Minimum profit: <strong class="money">{formatCents(threshold)}</strong>
+        {settings.profitThresholdCents === null && <span class="threshold__default"> (default)</span>}
+      </span>
+      <button type="button" class="btn-text" aria-haspopup="dialog" onClick={openSettings}>
+        Edit<span class="visually-hidden"> minimum profit</span>
+      </button>
+    </p>
+  );
+
+  const lookupForm = (
+    <LookupForm
+      handle={formRef}
+      query={query}
+      onQueryChange={setQuery}
+      loading={lookup.state.status === 'loading'}
+      serverError={lookup.fieldError}
+      onFieldEdit={lookup.clearFieldError}
+      onSubmit={submit}
+      onScan={canScan ? () => void openScanner() : undefined}
+      scanButtonRef={scanButtonRef}
+      // Not while the camera ground is live: `scanNext`/`dismiss` return to the resting sheet
+      // (remounting this form) but focus the chrome Cancel button, not the input — the whole
+      // point is to keep decoding. Autofocusing here would steal that focus and, worse, fire the
+      // FR-011 focusin release trigger below, killing the live camera the instant "Scan the next
+      // one" is clicked (regression: SC-003's second-code-in-a-row loop).
+      autoFocus={desktop || (everExpanded && ground.kind !== 'camera')}
+    />
+  );
+
+  const skipToInput = (e: Event) => {
+    e.preventDefault();
+    setSheetView('resting');
+    formRef.current?.focusInput();
+  };
 
   return (
     <>
-      <a class="skip-link" href="#lookup-input">
+      <a class="skip-link" href={`#${INPUT_ID}`} onClick={skipToInput}>
         Skip to lookup
       </a>
-      <Header onOpenSettings={openSettings} ebayEnv={meta.ebayEnv} />
+      {desktop ? <div class="ground ground--static" /> : (viewfinder ?? <div class="ground ground--static" />)}
+      <Header
+        onOpenSettings={openSettings}
+        ebayEnv={meta.ebayEnv}
+        onOpenRecent={!desktop ? openRecent : undefined}
+        recentButtonRef={recentButtonRef}
+        onCancelCamera={ground.kind === 'camera' ? cancelCamera : undefined}
+        cancelButtonRef={cancelButtonRef}
+      />
       <main id="main" class="layout">
-        <div class="col-lookup">
-          <LookupForm
-            handle={formRef}
-            loading={lookup.state.status === 'loading'}
-            serverError={lookup.fieldError}
-            onFieldEdit={lookup.clearFieldError}
-            onSubmit={submit}
-            onScan={canScan ? () => void openScanner() : undefined}
-            scanButtonRef={scanButtonRef}
-          />
-          <p class="threshold">
-            <span>
-              Minimum profit: <strong class="money">{formatCents(threshold)}</strong>
-              {settings.profitThresholdCents === null && <span class="threshold__default"> (default)</span>}
-            </span>
-            <button type="button" class="btn-text" aria-haspopup="dialog" onClick={openSettings}>
-              Edit<span class="visually-hidden"> minimum profit</span>
-            </button>
-          </p>
-        </div>
+        {desktop && (
+          <div class="col-lookup">
+            {viewfinder}
+            {cameraNotice}
+            {lookupForm}
+            {thresholdLine}
+          </div>
+        )}
         <div class="col-result">
-          <ResultPanel
-            shown={lookup.shown}
-            meta={meta}
-            onCheckAnother={checkAnother}
-            onTryTitle={checkAnother}
-            onRetry={lookup.retry}
-            onScan={canScan ? () => void openScanner() : undefined}
-          />
+          {desktop ? (
+            <Sheet view="expanded" onDismiss={dismiss} presentation="pane">
+              <ResultPanel
+                shown={lookup.shown}
+                meta={meta}
+                ground="static"
+                onCheckAnother={checkAnother}
+                onTryTitle={checkAnother}
+                onRetry={lookup.retry}
+                onScan={canScan ? () => void openScanner() : undefined}
+              />
+            </Sheet>
+          ) : (
+            <Sheet view={sheetView} onDismiss={dismiss} presentation="bottom">
+              {sheetView === 'resting' ? (
+                <>
+                  <EmptyState />
+                  {cameraNotice}
+                  {lookupForm}
+                  {thresholdLine}
+                </>
+              ) : (
+                <ResultPanel
+                  shown={lookup.shown}
+                  meta={meta}
+                  visible={sheetView === 'expanded'}
+                  ground={ground.kind === 'camera' ? 'camera' : 'static'}
+                  onCheckAnother={checkAnother}
+                  onTryTitle={checkAnother}
+                  onRetry={lookup.retry}
+                  onScan={canScan ? () => void openScanner() : undefined}
+                  onScanNext={scanNext}
+                  onOpenRecent={openRecent}
+                  // Below 1024px the expanded sheet is skeleton-only while loading — no Check
+                  // button exists yet (<LookupForm> only lives in the resting sheet) — so S1
+                  // itself takes focus (contracts/sheet-states.md S1 row, behaviour rule 11).
+                  // <LookupForm> is unmounted for the whole loading phase here, so this can't
+                  // race its own `autoFocus` effect; a Recent selection resolves straight to
+                  // 'success' (never 'loading'), so it can't race `closeRecent`'s focus either.
+                  focusLoading
+                />
+              )}
+            </Sheet>
+          )}
         </div>
-        <div class="col-recent">
-          <RecentList
-            history={lookup.history}
-            storageOk={storageOk}
-            onSelect={lookup.showEntry}
-            onClear={lookup.clearHistory}
-          />
-        </div>
+        {desktop && (
+          <div class="col-recent">
+            <RecentList
+              history={lookup.history}
+              storageOk={storageOk}
+              onSelect={showEntry}
+              onClear={lookup.clearHistory}
+              presentation="pane"
+            />
+          </div>
+        )}
       </main>
 
+      {!desktop && (
+        <RecentList
+          history={lookup.history}
+          storageOk={storageOk}
+          onSelect={showEntry}
+          onClear={lookup.clearHistory}
+          presentation="sheet"
+          open={overlay === 'recent'}
+          onClose={closeRecent}
+        />
+      )}
+
       <SettingsDialog
-        open={settingsOpen}
+        open={overlay === 'settings'}
         settings={settings}
         meta={meta}
         onSave={(cents) => {
@@ -154,25 +489,8 @@ export function App() {
           saveSettings(next);
           setSettings(next);
         }}
-        onClose={() => {
-          setSettingsOpen(false);
-          settingsOpener.current?.focus();
-        }}
+        onClose={closeSettings}
       />
-
-      {scanOpen && ScannerView && (
-        <ScannerView
-          onCode={onCode}
-          onCancel={() => {
-            setScanOpen(false);
-            scanButtonRef.current?.focus();
-          }}
-          onTypeInstead={() => {
-            setScanOpen(false);
-            formRef.current?.focusInput();
-          }}
-        />
-      )}
 
       <LiveRegion />
     </>

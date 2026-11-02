@@ -82,18 +82,32 @@ the only code that touches the real sandbox is the opt-in smoke script:
 `MATCH_MIN_DOMINANCE_HIGH`, `MATCH_MIN_DOMINANCE_MEDIUM`, `MATCH_MAX_DISPERSION_HIGH`,
 `MATCH_MAX_DISPERSION_MEDIUM`.
 
-The **web client** (spec `specs/006-web-client/`) is the product's face: a mobile-first,
-installable web app in its own package, `web/` (Preact + TypeScript + Vite, hand-written CSS, no
-web fonts or icon libraries), served same-origin by the API in production. One screen: scan or type
-→ verdict, reason and figures → next item. The camera scanner (native `BarcodeDetector`, else the
-`barcode-detector` ZXing-WASM ponyfill with the `.wasm` self-hosted — never a CDN) is lazy-loaded on
-the first Scan tap and never costs the typing path. Settings (minimum profit) and the last 50
-results live only in the device's `localStorage`. It must meet **WCAG 2.2 AA** (constitution VIII):
-contrast-verified tokens in `web/src/styles/tokens.css`, semantic HTML, managed focus, live-region
-announcements, and axe checks on every screen state in both the unit suite and the Playwright e2e
-matrix. The initial download is capped at **100 KB gzip** by `web/scripts/check-size.mjs`, which
-`npm test` runs after a build. All UI copy comes verbatim from
-`specs/006-web-client/contracts/ui-states.md`. Whenever `/api/meta` reports an `ebayEnv` other than `production`, the client shows a "Test data — eBay sandbox" badge in the header, adds a sparse-sandbox sentence to no-market results, and marks Recent entries checked in sandbox (spec `specs/007-environment-badge/`); `/api/meta` is served `no-cache` so an environment switch shows on the next page load. Native apps may follow later on the same API.
+The **web client** (spec `specs/006-web-client/`) is the product's face: a native sheet UI (spec
+`specs/008-native-sheet-ui/`), mobile-first, installable web app in its own package, `web/` (Preact
++ TypeScript + Vite, hand-written CSS, no web fonts or icon libraries), served same-origin by the
+API in production. The camera is the persistent ground (live viewfinder when scanning, static
+neutral tone when the user typed); a frosted bottom sheet rests as the lookup form and expands to
+show the result. Camera stays live behind an open result sheet and is released on page hide, Cancel,
+or leaving the flow — amended from 006 FR-009 (camera assertions rewritten, not deleted) — while
+decoding is suspended for code that opened the sheet to prevent double-charging a lookup. Barcode
+scanner (`web/src/scanner/viewfinder.tsx`, native `BarcodeDetector`, else `barcode-detector`
+ZXing-WASM ponyfill with `.wasm` self-hosted — never a CDN) is lazy-loaded on first Scan and never
+costs the typing path. Recent opens as its own full-height sheet below 1024 px and as the permanent
+third column above it, with a restyled three-pane layout. Settings (minimum profit) and the last 50
+results live only in `localStorage`. It must meet **WCAG 2.2 AA** (constitution VIII): token
+contrast is checked by `web/src/styles/contrast.test.ts` against
+`web/src/styles/contrast-contract.ts` against the worst-case composited ground, and the e2e matrix
+runs a second axe pass with `<video>` hidden and fails on `color-contrast` entries marked
+`incomplete`; two lookbook tints were adjusted to pass AA (secondary `#6B7079` → `#636872`,
+FLIP_RISKY `#C07A00` → `#B07000`). Semantic HTML, managed focus, live-region announcements, and axe
+checks run on every screen state in both unit and e2e. Gzip budget holds at **≤ 100 KB** (currently
+22.9 KB, 295 unit tests); latency baseline (submit → verdict median of 5 cycles) is 33.9 ms,
+recorded in `web/e2e/baseline.json`. All UI copy comes verbatim from
+`specs/006-web-client/contracts/ui-states.md`. Whenever `/api/meta` reports an `ebayEnv` other than
+`production`, the client shows a "Test data — eBay sandbox" badge in the header, adds a
+sparse-sandbox sentence to no-market results, and marks Recent entries checked in sandbox (spec
+`specs/007-environment-badge/`); `/api/meta` is served `no-cache` so an environment switch shows on
+the next page load. Native apps may follow later on the same API.
 
 Spec `specs/005-backend-hardening/` closes gaps found after 004: the per-client daily cap now
 tracks the connecting socket address unless `TRUST_PROXY` is explicitly set (a hop count or a

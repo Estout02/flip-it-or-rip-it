@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { useState } from 'preact/hooks';
 import { describe, expect, it, vi } from 'vitest';
 import { entryFor, flip, noMarket, risky, uncertain } from '../test/fixtures';
 import { formatCheckedAt } from '../lib/verdict-copy';
@@ -128,6 +129,137 @@ describe('RecentList', () => {
       );
       expect(document.querySelector('.chip--test')).toBeNull();
       expect(document.querySelector('.recent-item')!.getAttribute('aria-label')).toMatch(/^Flip it: /);
+    });
+  });
+
+  describe('presentation="sheet" (R9, below 1024px)', () => {
+    function Harness({
+      onSelect = vi.fn(),
+      onClear = vi.fn(),
+    }: { onSelect?: (e: (typeof history)[number]) => void; onClear?: () => void } = {}) {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button type="button" id="opener" onClick={() => setOpen(true)}>
+            Recent
+          </button>
+          <RecentList
+            history={history}
+            storageOk
+            onSelect={onSelect}
+            onClear={onClear}
+            presentation="sheet"
+            open={open}
+            onClose={() => {
+              setOpen(false);
+              document.getElementById('opener')!.focus();
+            }}
+          />
+        </>
+      );
+    }
+
+    it('opens as a modal dialog focused on the Recent heading', async () => {
+      render(<Harness />);
+      const dialog = document.querySelector('dialog.recent-sheet') as HTMLDialogElement;
+      expect(dialog).toBeTruthy();
+      await waitFor(() => expect(dialog.open).toBe(true));
+      await waitFor(() => expect(document.activeElement).toBe(document.getElementById('recent-heading')));
+    });
+
+    it('selecting an entry calls onSelect and leaves focus/closing entirely to the caller (spec 008 B2)', () => {
+      // Post-select focus moved to App: it owns the "actually closed" signal (this dialog's real
+      // `close` event, via `onClose`) and only then moves focus to the result heading — a modal
+      // <dialog> makes everything outside it inert, so anything attempted earlier would silently
+      // no-op. RecentList's only job here is to report the selection; it neither blurs nor closes
+      // itself in response (App decides that by flipping `open`, exercised in app.test.tsx).
+      const onSelect = vi.fn();
+      render(<Harness onSelect={onSelect} />);
+      const item = screen.getAllByRole('listitem')[0]!.querySelector('button')!;
+      item.focus();
+      fireEvent.click(item);
+      expect(onSelect).toHaveBeenCalledWith(history[0]);
+      expect(document.activeElement).toBe(item);
+    });
+
+    it('has the same entries and accessible names as the pane', () => {
+      render(<Harness />);
+      const time = formatCheckedAt(history[0]!.checkedAt);
+      expect(
+        screen.getByRole('button', {
+          name: `Flip it — slow seller: Rare Hardcover First Edition, +$99.10 profit, checked ${time}`,
+        }),
+      ).toBeTruthy();
+    });
+
+    it('renders the same empty state and storage notice as the pane', () => {
+      render(
+        <RecentList
+          history={[]}
+          storageOk={false}
+          onSelect={vi.fn()}
+          onClear={vi.fn()}
+          presentation="sheet"
+          open
+          onClose={vi.fn()}
+        />,
+      );
+      expect(screen.getByText('Items you check will show up here.')).toBeTruthy();
+      expect(screen.getByText("Recent lookups can't be saved in this browser.")).toBeTruthy();
+    });
+
+    it('Clear-history confirm still focuses Cancel first', async () => {
+      render(<Harness />);
+      fireEvent.click(screen.getByRole('button', { name: 'Clear history' }));
+      const confirm = screen.getByRole('dialog', { name: 'Clear all recent lookups on this device?' });
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(true));
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+    });
+
+    // The confirm dialog renders as a sibling of the sheet dialog, not nested inside it (it would
+    // otherwise be a native <dialog> nested in another open modal <dialog> — see the comment on
+    // RecentList's sheet-presentation return). Cancel and Clear both close it without the browser's
+    // native Escape path, so both routes are exercised here the same way the pane's are above.
+    it('Cancel returns focus to Clear history; Clear returns focus to the Recent heading', async () => {
+      const onClear = vi.fn();
+      render(<Harness onClear={onClear} />);
+      const clearHistoryBtn = screen.getByRole('button', { name: 'Clear history' });
+      fireEvent.click(clearHistoryBtn);
+      const confirm = screen.getByRole('dialog', { name: 'Clear all recent lookups on this device?' });
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(true));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(false));
+      expect(onClear).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(clearHistoryBtn);
+
+      fireEvent.click(clearHistoryBtn);
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(true));
+      fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+      await waitFor(() => expect((confirm as HTMLDialogElement).open).toBe(false));
+      expect(onClear).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Recent' }));
+    });
+
+    it('the Close button closes it and returns focus to the opener', async () => {
+      render(<Harness />);
+      const dialog = document.querySelector('dialog.recent-sheet') as HTMLDialogElement;
+      const opener = document.getElementById('opener')!;
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      await waitFor(() => expect(dialog.open).toBe(false));
+      expect(document.activeElement).toBe(opener);
+    });
+
+    // jsdom's <dialog> polyfill (src/test/setup.ts) implements open/close and the `close` event,
+    // but not the native Escape-to-cancel behaviour real browsers give a modal dialog for free —
+    // SettingsDialog.test.tsx notes the same limitation. Covered for real in e2e/errors.spec.ts.
+    it('closing the dialog (as Escape would, natively) returns focus to the opener', async () => {
+      render(<Harness />);
+      const dialog = document.querySelector('dialog.recent-sheet') as HTMLDialogElement;
+      const opener = document.getElementById('opener')!;
+      dialog.close();
+      await waitFor(() => expect(dialog.open).toBe(false));
+      expect(document.activeElement).toBe(opener);
     });
   });
 });
