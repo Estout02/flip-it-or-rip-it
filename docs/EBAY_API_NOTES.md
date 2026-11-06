@@ -3,6 +3,13 @@
 *Researched 2026-07-07. Governs how this app talks to eBay. The founder's #1 operational fear is
 getting his eBay/developer account or IP banned — everything here is designed around that.*
 
+> **2026-11-06 — superseded in part (constitution v2.0.0, PROPOSED).** The "Valuation strategy"
+> section below says asking-price data is the permanent basis. The proposed Principle I adds that
+> eBay's API License Agreement forbids using eBay Content to suggest or model prices without
+> eBay's written consent, so Browse-derived values must not be shown to anyone but the founder
+> until consent is recorded. Source: `docs/REVIEW-AND-PLAN.md` §3 (branch `plan/phone-app`).
+> This section is rewritten under spec 010; until then read it with that caveat.
+
 ## Hard rules (non-negotiable)
 
 1. **Never scrape eBay pages.** No fetching `ebay.com/sch/...` sold-listing pages, no headless
