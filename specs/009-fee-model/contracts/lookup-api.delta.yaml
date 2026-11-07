@@ -1,0 +1,82 @@
+openapi: 3.1.0
+info:
+  title: Flip It or Rip It lookup API — spec 009 delta
+  version: 0.9.0-delta
+  description: >
+    Additive change to POST /api/lookup (base contract: specs/005-backend-hardening/contracts/lookup-api.yaml).
+    Request bodies are UNCHANGED. `feesCents` keeps its meaning (total fees) but its value now comes
+    from the category-aware schedule, so it is generally higher than under the flat 13.25% model.
+    Only the new/changed response schema is shown. Money is integer cents everywhere.
+paths: {}
+components:
+  schemas:
+    VerdictResultFeeAdditions:
+      type: object
+      description: Properties added to the existing lookup 200 response.
+      required: [feeBreakdown]
+      properties:
+        feesCents:
+          type: integer
+          minimum: 0
+          description: Total eBay fees in cents. MUST equal feeBreakdown.finalValueFeeCents + feeBreakdown.perOrderFeeCents.
+        feeBreakdown:
+          $ref: '#/components/schemas/FeeBreakdown'
+
+    FeeBreakdown:
+      type: object
+      required:
+        - finalValueFeeCents
+        - perOrderFeeCents
+        - totalCents
+        - orderTotalCents
+        - categoryKey
+        - categoryLabel
+        - categoryResolution
+        - assumptions
+        - schedule
+      properties:
+        finalValueFeeCents: { type: integer, minimum: 0 }
+        perOrderFeeCents: { type: integer, minimum: 0, description: "0 when the category waives it, or when there is no order (price 0), or under the legacy flat-rate fallback." }
+        totalCents: { type: integer, minimum: 0 }
+        orderTotalCents:
+          type: integer
+          minimum: 0
+          description: The fee base actually used (item price + buyer-paid shipping + sales tax; the last two are 0 unless supplied).
+        categoryKey:
+          type: string
+          description: Schedule category id, e.g. books_magazines, most_categories. "legacy_flat" under the fallback.
+        categoryLabel: { type: string }
+        categoryResolution:
+          type: string
+          enum: [ISBN_IDENTIFIER, CATEGORY_MAP, DEFAULT_ASSUMED, LEGACY_FLAT]
+          description: >
+            ISBN_IDENTIFIER: a 978/979 Bookland GTIN. CATEGORY_MAP: the matched leaf category ID was
+            in the category map. DEFAULT_ASSUMED: unmapped, default category used. LEGACY_FLAT: no
+            schedule for the marketplace.
+        assumptions:
+          type: array
+          description: Stable codes; every assumption applied is listed, none are silent.
+          items:
+            type: string
+            enum:
+              - SELLER_PAYS_SHIPPING        # buyer-paid shipping assumed 0
+              - SALES_TAX_EXCLUDED          # sales tax assumed 0 (eBay charges the fee on it)
+              - STANDARD_SELLER_NO_STORE    # no Store subscription, meets performance standards
+              - NO_PROMOTED_LISTING_FEES    # optional ad fees not included
+              - FEE_CATEGORY_ASSUMED        # category could not be determined; default used
+              - LEGACY_FLAT_RATE_NO_SCHEDULE # configured marketplace has no schedule
+              - SCHEDULE_STALE              # past reviewIntervalDays since verifiedAt
+              - SCHEDULE_NOT_FOUNDER_VERIFIED # verification.status is THIRD_PARTY_UNVERIFIED
+        schedule:
+          type: object
+          required: [marketplace, region, verifiedAt, verificationStatus, stale, scope]
+          properties:
+            marketplace: { type: string, example: ebay }
+            region: { type: string, example: US }
+            verifiedAt: { type: string, description: "Date the rule data was last checked by its publisher or the founder." }
+            verificationStatus: { type: string, enum: [THIRD_PARTY_UNVERIFIED, FOUNDER_VERIFIED] }
+            stale: { type: boolean }
+            scope: { type: string, example: "US seller to US buyer, standard account, no Store, no Promoted Listings, no international fees" }
+        rateNote:
+          type: string
+          description: Optional human-readable rate, e.g. "15.3% of order total up to $7,500.00, 2.35% above, + $0.40 per order".

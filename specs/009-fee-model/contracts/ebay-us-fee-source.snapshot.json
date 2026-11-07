@@ -1,0 +1,306 @@
+{
+  "_provenance": {
+    "what": "Verbatim eBay US entry from a third-party open fee table, kept as the audit source for specs/009-fee-model. NOT eBay's own page.",
+    "fetchedFrom": "https://www.underpriced.app/data/reseller-fees.json",
+    "fetchedOn": "2026-11-06",
+    "tableVersion": "1.1.1",
+    "tableUpdatedAt": "2026-11-01",
+    "entryVerifiedAt": "2026-11-01",
+    "publisher": {
+      "name": "Underpriced",
+      "url": "https://www.underpriced.app/"
+    },
+    "license": {
+      "id": "MIT",
+      "url": "https://opensource.org/license/mit"
+    },
+    "ebayPageCited": "https://www.ebay.com/help/selling/fees-credits-invoices/selling-fees?id=4822",
+    "warning": "We did not fetch ebay.com (constitution I / repo rule). The founder verifies against eBay's selling-fees page before the schedule is ratified (spec 009 FR-014)."
+  },
+  "rounding": "Each percentage fee is worked out in cents and rounded to the nearest cent (half a cent rounds up), separately for each bracket. Fixed fees are added after rounding, and the total is the sum of the rounded parts.",
+  "bases": {
+    "item": "item price",
+    "item_shipping": "item price + buyer-paid shipping",
+    "item_shipping_gift_wrap": "item price + buyer-paid shipping + gift wrap",
+    "order": "order total (item price + buyer-paid shipping + sales tax)",
+    "order_gift_wrap": "order total + gift wrap"
+  },
+  "ebay": {
+    "id": "ebay",
+    "marketplace": "eBay",
+    "channel": "shipped",
+    "verifiedAt": "2026-11-01",
+    "sources": [
+      {
+        "label": "eBay: Selling fees",
+        "url": "https://www.ebay.com/help/selling/fees-credits-invoices/selling-fees?id=4822"
+      }
+    ],
+    "notes": [
+      "For sellers without an eBay Store subscription who meet eBay\u2019s seller performance standards. Promoted Listings and international fees are extra and not included.",
+      "Payment processing is included in the final value fee."
+    ],
+    "fees": [
+      {
+        "id": "final_value_fee",
+        "label": "Final value fee",
+        "type": "percent",
+        "basis": "order",
+        "rateFrom": "categories",
+        "rule": "Rate by category, charged on the order total",
+        "source": "https://www.ebay.com/help/selling/fees-credits-invoices/selling-fees?id=4822"
+      },
+      {
+        "id": "per_order_fee",
+        "label": "Per-order fee",
+        "type": "fixed",
+        "basis": "order",
+        "brackets": [
+          {
+            "upTo": 10,
+            "amount": 0.3
+          },
+          {
+            "upTo": null,
+            "amount": 0.4
+          }
+        ],
+        "waivedBy": "athletic_shoes",
+        "rule": "$0.30 when the order total is $10 or less, $0.40 when it's over $10",
+        "source": "https://www.ebay.com/help/selling/fees-credits-invoices/selling-fees?id=4822"
+      }
+    ],
+    "categories": {
+      "default": "most_categories",
+      "list": [
+        {
+          "id": "most_categories",
+          "label": "Most categories",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 7500,
+              "rate": 0.136
+            },
+            {
+              "upTo": null,
+              "rate": 0.0235
+            }
+          ]
+        },
+        {
+          "id": "books_magazines",
+          "label": "Books & Magazines",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 7500,
+              "rate": 0.153
+            },
+            {
+              "upTo": null,
+              "rate": 0.0235
+            }
+          ]
+        },
+        {
+          "id": "movies_tv",
+          "label": "Movies & TV",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 7500,
+              "rate": 0.153
+            },
+            {
+              "upTo": null,
+              "rate": 0.0235
+            }
+          ]
+        },
+        {
+          "id": "music_non_vinyl",
+          "label": "Music (except vinyl records)",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 7500,
+              "rate": 0.153
+            },
+            {
+              "upTo": null,
+              "rate": 0.0235
+            }
+          ]
+        },
+        {
+          "id": "coins",
+          "label": "Coins & Paper Money",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 7500,
+              "rate": 0.1325
+            },
+            {
+              "upTo": null,
+              "rate": 0.0235
+            }
+          ]
+        },
+        {
+          "id": "trading_cards",
+          "label": "Trading cards",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 7500,
+              "rate": 0.1325
+            },
+            {
+              "upTo": null,
+              "rate": 0.0235
+            }
+          ]
+        },
+        {
+          "id": "comics",
+          "label": "Comic books",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 7500,
+              "rate": 0.1325
+            },
+            {
+              "upTo": null,
+              "rate": 0.0235
+            }
+          ]
+        },
+        {
+          "id": "watches",
+          "label": "Watches",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 1000,
+              "rate": 0.15
+            },
+            {
+              "upTo": 7500,
+              "rate": 0.065
+            },
+            {
+              "upTo": null,
+              "rate": 0.03
+            }
+          ]
+        },
+        {
+          "id": "guitars_basses",
+          "label": "Guitars & Basses",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 7500,
+              "rate": 0.067
+            },
+            {
+              "upTo": null,
+              "rate": 0.0235
+            }
+          ]
+        },
+        {
+          "id": "business_industrial_heavy",
+          "label": "Heavy equipment and select Business & Industrial",
+          "mode": "marginal",
+          "brackets": [
+            {
+              "upTo": 15000,
+              "rate": 0.03
+            },
+            {
+              "upTo": null,
+              "rate": 0.005
+            }
+          ]
+        },
+        {
+          "id": "bullion",
+          "label": "Bullion",
+          "mode": "whole",
+          "brackets": [
+            {
+              "upTo": 7500,
+              "rate": 0.136
+            },
+            {
+              "upTo": null,
+              "rate": 0.07
+            }
+          ]
+        },
+        {
+          "id": "handbags",
+          "label": "Handbags",
+          "mode": "whole",
+          "brackets": [
+            {
+              "upTo": 2000,
+              "rate": 0.15
+            },
+            {
+              "upTo": null,
+              "rate": 0.09
+            }
+          ]
+        },
+        {
+          "id": "jewelry",
+          "label": "Jewelry",
+          "mode": "whole",
+          "brackets": [
+            {
+              "upTo": 5000,
+              "rate": 0.15
+            },
+            {
+              "upTo": null,
+              "rate": 0.09
+            }
+          ]
+        },
+        {
+          "id": "athletic_shoes",
+          "label": "Athletic shoes",
+          "minimumOrderTotal": 150,
+          "belowMinimum": "most_categories",
+          "mode": "whole",
+          "brackets": [
+            {
+              "upTo": null,
+              "rate": 0.08
+            }
+          ],
+          "waivesPerOrderFee": true
+        },
+        {
+          "id": "nft",
+          "label": "NFTs",
+          "mode": "whole",
+          "brackets": [
+            {
+              "upTo": null,
+              "rate": 0.05
+            }
+          ]
+        }
+      ]
+    },
+    "region": "US",
+    "currency": "USD",
+    "summary": "13.6% of the order total + $0.40 per order ($0.30 at $10 or less), most categories"
+  }
+}
